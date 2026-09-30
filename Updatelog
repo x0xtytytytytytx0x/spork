@@ -1,53 +1,20 @@
 
 {
-  "version": "6.8",
-  "currentVersion": "6.8",
+  "version": "0.1",
+  "currentVersion": "0.1",
   "changelog": [
     {
-      "version": "6.8",
+      "version": "0.1",
       "notes": [
-        "Custom themes save as R8TW0/Themes/<name>.json (one file per theme)",
-        "Premade themes + update log load from GitHub",
-        "Keybinds work while UI is hidden",
-        "QOL: Anti AFK, Super max zoom, Places auto clean up, Namehide UI",
-        "Place saves use place name; auto-delete unused after 30 days",
-        "Delete Custom themes from Settings",
-        "Color picker rainbow toggle (synced, low cost)"
+"Added RTX/R8X to settings",
       ]
     },
     {
-      "version": "6.7",
+      "version": "0.0",
       "notes": [
-        "Bind conflict warning: new bind steals key + notifies",
-        "Loading: column heads, scanline, progress bar, glitch title",
-        "Loading exit: expanding ring + digit burst + radial dissolve"
+"Library set to public and public use.",
       ]
     },
-    {
-      "version": "6.6",
-      "notes": [
-        "Keybind buttons setting applies live to all Buttons + Toggles",
-        "Settings / Customize never get keybind slots"
-      ]
-    },
-    {
-      "version": "6.5",
-      "notes": [
-        "Dependencies: lock controls behind a toggle",
-        "window:Destroy() fully unloads UI"
-      ]
-    },
-    {
-      "version": "6.0",
-      "notes": [
-        "Hide keybind, drag bounds, search tab, verified gates"
-      ]
-    },
-    {
-      "version": "1.0",
-      "notes": [
-        "Initial R8//TW0 UI library"
-      ]
-    }
+
   ]
 }
