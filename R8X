@@ -645,6 +645,7 @@ function R8_RTX.SetOptions(opts)
 	if opts.DecalsEnabled ~= nil then R8_RTX.DecalsEnabled = opts.DecalsEnabled and true or false end
 	if opts.MaterialsEnabled ~= nil then R8_RTX.MaterialsEnabled = opts.MaterialsEnabled and true or false end
 	if opts.BloomEnabled ~= nil then R8_RTX.BloomEnabled = opts.BloomEnabled and true or false end
+	if opts.ContactColorEnabled ~= nil then R8_RTX.ContactColorEnabled = opts.ContactColorEnabled and true or false end
 	if opts.LightingEnabled ~= nil then R8_RTX.LightingEnabled = opts.LightingEnabled and true or false end
 	if typeof(opts.MaxDecalInstances) == "number" then
 		R8_RTX.MaxDecalInstances = math.clamp(math.floor(opts.MaxDecalInstances), 0, 50000)
