@@ -1,1 +1,733 @@
+--[[
+	R8X / RTX — remote module (no UI)
+	https://raw.githubusercontent.com/x0xtytytytytytx0x/spork/refs/heads/main/R8X
 
+	Does NOT auto-apply. Host UI should:
+	  local R8X = loadstring(game:HttpGet(...))()
+	  R8X.DecalsEnabled = true
+	  R8X.MaxDecalInstances = 4000
+	  R8X.BloomEnabled = true
+	  R8X.MaterialsEnabled = true
+	  R8X.Apply("auto")
+	  R8X.Revert()
+]]
+
+local Lighting = game:GetService("Lighting")
+local MaterialService = game:GetService("MaterialService")
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
+local ContentProvider = game:GetService("ContentProvider")
+
+-- Stealth names (harder to spot in Explorer)
+local TAG = {
+	FX = "CorePost_",           -- lighting effects
+	MAT = "SurfacePack_",       -- material variants
+	DECAL = "SurfaceDetail_",   -- decals
+	AUDIO = "MasterBus_",       -- sound service FX
+	MUFFLE = "DistEQ_",         -- per-sound muffle
+}
+
+local R8_RTX = {
+	Mode = "auto",
+	DecalsEnabled = true,
+	MaterialsEnabled = true,
+	LightingEnabled = true,
+	BloomEnabled = true,
+	ContactColorEnabled = true,
+	AudioEnabled = true,
+	DistanceMuffleEnabled = true,
+
+	DecalPartMinSize = 2,
+	MaxDecalInstances = 6000,
+	DecalBatchSize = 40,
+	ColorBatchSize = 40,
+
+	MuffleMinDistance = 25,
+	MuffleMaxDistance = 150,
+	MuffleMaxHighCut = -20,
+	MuffleLowBoost = 3,
+	MuffleUpdateInterval = 0.2,
+	MaxTrackedSounds = 250,
+
+	AudioReverbEnabled = true,
+	ReverbWetLevel = -10,
+	ReverbDecayTime = 1.3,
+
+	ExtendMaterialCoverage = true,
+	VerifyMaterialAssets = false,
+
+	DecalRadius = 400,
+	DecalRemoveBufferBase = 40,
+	DecalRangeCheckInterval = 1.0,
+
+	Applied = false,
+}
+
+local DECAL_A = "rbxassetid://16011338897"
+local DECAL_B = "rbxassetid://16245446702"
+local DECAL_TRANSPARENCY = 0.85
+local DECAL_FACES = {
+	{ Face = Enum.NormalId.Top, Texture = DECAL_A },
+	{ Face = Enum.NormalId.Top, Texture = DECAL_B },
+}
+
+local VARIANTS = {
+	Brick = { ColorMap = "rbxassetid://10872901256", NormalMap = "rbxassetid://10853928851", StudsPerTile = 10, MaterialPattern = Enum.MaterialPattern.Regular },
+	Cobblestone = { ColorMap = "rbxassetid://12223942040", NormalMap = "rbxassetid://12223964781", RoughnessMap = "rbxassetid://12223971076", StudsPerTile = 10, MaterialPattern = Enum.MaterialPattern.Regular },
+	Concrete = { ColorMap = "rbxassetid://10443896642", NormalMap = "rbxassetid://10443896891", RoughnessMap = "rbxassetid://10443894658", MetalnessMap = "rbxassetid://10443893802", StudsPerTile = 10, MaterialPattern = Enum.MaterialPattern.Regular },
+	CorrodedMetal = { ColorMap = "rbxassetid://14348802069", NormalMap = "rbxassetid://14348804868", RoughnessMap = "rbxassetid://14348806338", StudsPerTile = 10, MaterialPattern = Enum.MaterialPattern.Regular },
+	DiamondPlate = { ColorMap = "rbxassetid://10670766935", NormalMap = "rbxassetid://10670766978", RoughnessMap = "rbxassetid://10670767005", MetalnessMap = "rbxassetid://10670768341", StudsPerTile = 4, MaterialPattern = Enum.MaterialPattern.Regular },
+	Fabric = { ColorMap = "rbxassetid://10999572935", NormalMap = "rbxassetid://10999574355", StudsPerTile = 8, MaterialPattern = Enum.MaterialPattern.Regular },
+	Grass = { ColorMap = "rbxassetid://10438506816", NormalMap = "rbxassetid://10438506805", RoughnessMap = "rbxassetid://10438505073", StudsPerTile = 10, MaterialPattern = Enum.MaterialPattern.Regular },
+	Marble = { ColorMap = "rbxassetid://15377094699", MetalnessMap = "rbxassetid://15377095621", NormalMap = "rbxassetid://15377095984", RoughnessMap = "rbxassetid://15377094796", StudsPerTile = 10, MaterialPattern = Enum.MaterialPattern.Regular },
+	Metal = { ColorMap = "rbxassetid://10434452602", NormalMap = "rbxassetid://10434453861", RoughnessMap = "rbxassetid://10434453275", MetalnessMap = "rbxassetid://10434453560", StudsPerTile = 10, MaterialPattern = Enum.MaterialPattern.Regular },
+	Mud = { ColorMap = "rbxassetid://11256663376", NormalMap = "rbxassetid://11256663957", RoughnessMap = "rbxassetid://11256664764", MetalnessMap = "rbxassetid://10438583511", StudsPerTile = 10, MaterialPattern = Enum.MaterialPattern.Regular },
+	Pebble = { ColorMap = "rbxassetid://10991780334", NormalMap = "rbxassetid://10991780653", RoughnessMap = "rbxassetid://10991780698", StudsPerTile = 4, MaterialPattern = Enum.MaterialPattern.Organic },
+	Plastic = { ColorMap = "rbxassetid://11253186257", NormalMap = "rbxassetid://11253189571", RoughnessMap = "rbxassetid://11253190019", StudsPerTile = 10, MaterialPattern = Enum.MaterialPattern.Regular },
+	Sand = { ColorMap = "rbxassetid://104479428670400", NormalMap = "rbxassetid://16574171005", RoughnessMap = "rbxassetid://16574173371", StudsPerTile = 10, MaterialPattern = Enum.MaterialPattern.Regular },
+	Wood = { ColorMap = "rbxassetid://15769978648", NormalMap = "rbxassetid://15769982107", RoughnessMap = "rbxassetid://15769984402", StudsPerTile = 5, MaterialPattern = Enum.MaterialPattern.Regular },
+	WoodPlanks = { ColorMap = "rbxassetid://10999380858", NormalMap = "rbxassetid://10999381012", RoughnessMap = "rbxassetid://10999380858", StudsPerTile = 5, MaterialPattern = Enum.MaterialPattern.Regular },
+	Ground = { ColorMap = "rbxassetid://136242122901201", NormalMap = "rbxassetid://88425814507430", RoughnessMap = "rbxassetid://136706468684226", StudsPerTile = 8, MaterialPattern = Enum.MaterialPattern.Regular },
+}
+
+local MATERIAL_FALLBACKS = { SmoothPlastic = "Plastic", Asphalt = "Concrete", Pavement = "Concrete" }
+if R8_RTX.ExtendMaterialCoverage then
+	for target, source in pairs(MATERIAL_FALLBACKS) do
+		if VARIANTS[source] and not VARIANTS[target] then
+			VARIANTS[target] = VARIANTS[source]
+		end
+	end
+end
+
+local function log(...) end -- silent in production; set R8_RTX.Verbose=true to enable
+local function vlog(...)
+	if R8_RTX.Verbose then print("[R8X]", ...) end
+end
+
+local function lerp(a, b, t) return a + (b - a) * t end
+
+local PRESETS = {
+	sunrise = {
+		ClockTime = 6.3, Brightness = 1.35,
+		Ambient = Color3.fromRGB(120, 100, 90), OutdoorAmbient = Color3.fromRGB(200, 160, 130),
+		ColorShift_Top = Color3.fromRGB(255, 190, 140), ColorShift_Bottom = Color3.fromRGB(90, 70, 90),
+		EnvironmentDiffuseScale = 0.9, EnvironmentSpecularScale = 0.9, ExposureCompensation = 0.1, ShadowSoftness = 0.3,
+		AtmosphereColor = Color3.fromRGB(255, 205, 165), AtmosphereHaze = 0.25, SunRaysIntensity = 0.35, BloomIntensity = 0.8,
+	},
+	noon = {
+		ClockTime = 12, Brightness = 2.15,
+		Ambient = Color3.fromRGB(100, 105, 115), OutdoorAmbient = Color3.fromRGB(170, 175, 185),
+		ColorShift_Top = Color3.fromRGB(255, 255, 250), ColorShift_Bottom = Color3.fromRGB(100, 110, 120),
+		EnvironmentDiffuseScale = 1, EnvironmentSpecularScale = 1, ExposureCompensation = 0.05, ShadowSoftness = 0.15,
+		AtmosphereColor = Color3.fromRGB(255, 255, 255), AtmosphereHaze = 0.08, SunRaysIntensity = 0.15, BloomIntensity = 0.5,
+	},
+	sunset = {
+		ClockTime = 17.8, Brightness = 1.5,
+		Ambient = Color3.fromRGB(110, 80, 90), OutdoorAmbient = Color3.fromRGB(210, 140, 110),
+		ColorShift_Top = Color3.fromRGB(255, 140, 90), ColorShift_Bottom = Color3.fromRGB(70, 50, 80),
+		EnvironmentDiffuseScale = 0.9, EnvironmentSpecularScale = 0.95, ExposureCompensation = 0.15, ShadowSoftness = 0.35,
+		AtmosphereColor = Color3.fromRGB(255, 150, 110), AtmosphereHaze = 0.3, SunRaysIntensity = 0.4, BloomIntensity = 0.9,
+	},
+	night = {
+		ClockTime = 21.5, Brightness = 1.0,
+		Ambient = Color3.fromRGB(25, 30, 45), OutdoorAmbient = Color3.fromRGB(40, 50, 75),
+		ColorShift_Top = Color3.fromRGB(120, 140, 200), ColorShift_Bottom = Color3.fromRGB(15, 20, 35),
+		EnvironmentDiffuseScale = 0.7, EnvironmentSpecularScale = 0.85, ExposureCompensation = 0.2, ShadowSoftness = 0.35,
+		AtmosphereColor = Color3.fromRGB(255, 255, 255), AtmosphereHaze = 0.1, SunRaysIntensity = 0.05, BloomIntensity = 0.5,
+	},
+}
+
+local function clearOwnedLighting()
+	for _, c in ipairs(Lighting:GetChildren()) do
+		if c.Name:match("^" .. TAG.FX) then c:Destroy() end
+	end
+end
+
+local function addFX(className, props)
+	local e = Instance.new(className)
+	e.Name = TAG.FX .. className
+	for k, v in pairs(props) do pcall(function() e[k] = v end) end
+	e.Parent = Lighting
+	return e
+end
+
+local function applyPostFX(preset)
+	clearOwnedLighting()
+	addFX("Atmosphere", {
+		Density = 0.32, Glare = 1, Haze = preset.AtmosphereHaze or 0.12,
+		Color = preset.AtmosphereColor or Color3.fromRGB(255, 255, 255),
+		Decay = Color3.fromRGB(0, 0, 0), Offset = 0,
+	})
+	if R8_RTX.BloomEnabled then
+		addFX("BloomEffect", { Enabled = true, Intensity = preset.BloomIntensity or 1, Size = 50, Threshold = 1 })
+	end
+	addFX("BlurEffect", { Enabled = true, Size = 1 })
+	addFX("ColorCorrectionEffect", {
+		Enabled = true, Brightness = 0.02, Contrast = 0.3, Saturation = -0.15,
+		TintColor = Color3.fromRGB(255, 255, 255),
+	})
+	addFX("DepthOfFieldEffect", {
+		Enabled = true, FarIntensity = 0.75, FocusDistance = 0.05, InFocusRadius = 200, NearIntensity = 0.75,
+	})
+	addFX("SunRaysEffect", { Enabled = true, Intensity = preset.SunRaysIntensity or 0.2, Spread = 0.5 })
+end
+
+local function ensureFutureLighting()
+	pcall(function() Lighting.Technology = Enum.Technology.Future end)
+	if typeof(sethiddenproperty) == "function" then
+		pcall(sethiddenproperty, Lighting, "Technology", Enum.Technology.Future)
+	end
+end
+
+local function applyLightingPreset(name)
+	local preset = PRESETS[name] or PRESETS.noon
+	ensureFutureLighting()
+	Lighting.Brightness = preset.Brightness
+	Lighting.Ambient = preset.Ambient
+	Lighting.OutdoorAmbient = preset.OutdoorAmbient
+	Lighting.ColorShift_Top = preset.ColorShift_Top
+	Lighting.ColorShift_Bottom = preset.ColorShift_Bottom
+	Lighting.EnvironmentDiffuseScale = preset.EnvironmentDiffuseScale
+	Lighting.EnvironmentSpecularScale = preset.EnvironmentSpecularScale
+	Lighting.ExposureCompensation = preset.ExposureCompensation
+	Lighting.ShadowSoftness = preset.ShadowSoftness
+	Lighting.GlobalShadows = true
+	pcall(function() Lighting.ClockTime = preset.ClockTime end)
+	applyPostFX(preset)
+end
+
+local function resolveMode(mode)
+	mode = tostring(mode or R8_RTX.Mode or "auto"):lower()
+	if mode == "day" then return "noon" end
+	if PRESETS[mode] then return mode end
+	local t = Lighting.ClockTime
+	if t >= 5.5 and t < 7.5 then return "sunrise"
+	elseif t >= 7.5 and t < 16.5 then return "noon"
+	elseif t >= 16.5 and t < 19 then return "sunset"
+	else return "night" end
+end
+
+local materialsApplied = false
+local function applyMaterials()
+	if materialsApplied or not R8_RTX.MaterialsEnabled then return end
+	for _, c in ipairs(MaterialService:GetChildren()) do
+		if c:IsA("MaterialVariant") and c.Name:match("^" .. TAG.MAT) then c:Destroy() end
+	end
+	local okN = 0
+	for matName, data in pairs(VARIANTS) do
+		local mat = Enum.Material[matName]
+		if typeof(mat) == "EnumItem" then
+			local variantName = TAG.MAT .. matName
+			local v = Instance.new("MaterialVariant")
+			v.Name = variantName
+			v.BaseMaterial = mat
+			if data.ColorMap and data.ColorMap ~= "" then v.ColorMap = data.ColorMap end
+			if data.NormalMap and data.NormalMap ~= "" then v.NormalMap = data.NormalMap end
+			if data.RoughnessMap and data.RoughnessMap ~= "" then v.RoughnessMap = data.RoughnessMap end
+			if data.MetalnessMap and data.MetalnessMap ~= "" then v.MetalnessMap = data.MetalnessMap end
+			if data.MaterialPattern then v.MaterialPattern = data.MaterialPattern end
+			if data.StudsPerTile then v.StudsPerTile = data.StudsPerTile end
+			v.Parent = MaterialService
+			if pcall(function() MaterialService:SetBaseMaterialOverride(mat, variantName) end) then okN += 1 end
+		end
+	end
+	materialsApplied = true
+	vlog("Materials", okN)
+end
+
+local function clearMaterials()
+	for matName in pairs(VARIANTS) do
+		local mat = Enum.Material[matName]
+		if typeof(mat) == "EnumItem" then
+			pcall(function() MaterialService:ClearBaseMaterialOverride(mat) end)
+		end
+	end
+	for _, c in ipairs(MaterialService:GetChildren()) do
+		if c:IsA("MaterialVariant") and c.Name:match("^" .. TAG.MAT) then c:Destroy() end
+	end
+	materialsApplied = false
+end
+
+-- Audio (compact)
+local audioApplied = false
+local function clearOwnedAudio()
+	for _, c in ipairs(SoundService:GetChildren()) do
+		if c.Name:match("^" .. TAG.AUDIO) then c:Destroy() end
+	end
+end
+local function applyAudioEnhancements()
+	if audioApplied or not R8_RTX.AudioEnabled then return end
+	clearOwnedAudio()
+	local function add(className, props)
+		local e = Instance.new(className)
+		e.Name = TAG.AUDIO .. className
+		for k, v in pairs(props) do pcall(function() e[k] = v end) end
+		e.Parent = SoundService
+	end
+	add("CompressorSoundEffect", { Enabled = true, Threshold = -12, Ratio = 2.5, Attack = 0.03, Release = 0.2, GainMakeup = 4 })
+	add("EqualizerSoundEffect", { Enabled = true, LowGain = 6, MidGain = 0, HighGain = 3 })
+	if R8_RTX.AudioReverbEnabled then
+		add("ReverbSoundEffect", {
+			Enabled = true, DecayTime = R8_RTX.ReverbDecayTime, Density = 1, Diffusion = 1,
+			DryLevel = 0, WetLevel = R8_RTX.ReverbWetLevel,
+		})
+	end
+	audioApplied = true
+end
+
+-- Muffle (simplified track)
+local trackedSounds, muffleConnections = {}, {}
+local muffleLoopRunning = false
+local function getSoundWorldPosition(sound)
+	local p = sound.Parent
+	if not p then return nil end
+	if p:IsA("Attachment") then return p.WorldPosition end
+	if p:IsA("BasePart") then return p.Position end
+	return nil
+end
+local function cleanupTrackedSound(sound)
+	local eq = trackedSounds[sound]
+	if eq then pcall(function() eq:Destroy() end) trackedSounds[sound] = nil end
+end
+local function startTrackingSound(sound)
+	if not R8_RTX.DistanceMuffleEnabled or trackedSounds[sound] then return end
+	if not getSoundWorldPosition(sound) then return end
+	local n = 0 for _ in pairs(trackedSounds) do n += 1 end
+	if n >= R8_RTX.MaxTrackedSounds then return end
+	local eq = Instance.new("EqualizerSoundEffect")
+	eq.Name = TAG.MUFFLE
+	eq.Parent = sound
+	trackedSounds[sound] = eq
+end
+local function stopWatchingSound(sound)
+	local conns = muffleConnections[sound]
+	if conns then for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end muffleConnections[sound] = nil end
+	cleanupTrackedSound(sound)
+end
+local function watchSoundLifecycle(sound)
+	if muffleConnections[sound] then return end
+	muffleConnections[sound] = {
+		sound.Played:Connect(function() startTrackingSound(sound) end),
+		sound.Ended:Connect(function() cleanupTrackedSound(sound) end),
+		sound.AncestryChanged:Connect(function(_, parent) if not parent then stopWatchingSound(sound) end end),
+	}
+	if sound.IsPlaying then startTrackingSound(sound) end
+end
+local function muffleUpdateLoop()
+	if muffleLoopRunning then return end
+	muffleLoopRunning = true
+	while R8_RTX.Applied do
+		if R8_RTX.DistanceMuffleEnabled then
+			local cam = Workspace.CurrentCamera
+			local listenerPos = cam and cam.CFrame.Position
+			if listenerPos then
+				for sound, eq in pairs(trackedSounds) do
+					if sound.Parent and sound.IsPlaying then
+						local pos = getSoundWorldPosition(sound)
+						if pos then
+							local d = (pos - listenerPos).Magnitude
+							local a = 0
+							if R8_RTX.MuffleMaxDistance > R8_RTX.MuffleMinDistance then
+								a = math.clamp((d - R8_RTX.MuffleMinDistance) / (R8_RTX.MuffleMaxDistance - R8_RTX.MuffleMinDistance), 0, 1)
+							end
+							eq.HighGain = lerp(0, R8_RTX.MuffleMaxHighCut, a)
+							eq.MidGain = lerp(0, R8_RTX.MuffleMaxHighCut * 0.4, a)
+							eq.LowGain = lerp(0, R8_RTX.MuffleLowBoost, a)
+						end
+					else
+						cleanupTrackedSound(sound)
+					end
+				end
+			end
+		end
+		task.wait(R8_RTX.MuffleUpdateInterval)
+	end
+	muffleLoopRunning = false
+end
+local function revertMuffling()
+	for s in pairs(muffleConnections) do stopWatchingSound(s) end
+	table.clear(muffleConnections)
+	table.clear(trackedSounds)
+end
+
+-- Decals
+local transparencyConnections, watchedParts = {}, {}
+local decalInstanceCount = 0
+local DECAL_GRID_SIZE = 50
+local decalGrid = {}
+local function decalCellKey(pos)
+	return math.floor(pos.X / DECAL_GRID_SIZE) .. ":" .. math.floor(pos.Y / DECAL_GRID_SIZE) .. ":" .. math.floor(pos.Z / DECAL_GRID_SIZE)
+end
+local function addToDecalGrid(part)
+	local key = decalCellKey(part.Position)
+	decalGrid[key] = decalGrid[key] or {}
+	table.insert(decalGrid[key], part)
+end
+local function buildDecalGrid(targets)
+	table.clear(decalGrid)
+	for _, part in ipairs(targets) do addToDecalGrid(part) end
+end
+local function getPlayerOrigin()
+	local char = LocalPlayer and LocalPlayer.Character
+	local root = char and (char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart)
+	if root then
+		local ok, vel = pcall(function() return root.AssemblyLinearVelocity end)
+		return root.Position, (ok and vel and vel.Magnitude) or 0
+	end
+	local cam = Workspace.CurrentCamera
+	if cam then return cam.CFrame.Position, 0 end
+	return nil, 0
+end
+local function partHasOurDecals(part)
+	for _, c in ipairs(part:GetChildren()) do
+		if c:IsA("Decal") and c.Name:match("^" .. TAG.DECAL) then return true end
+	end
+	return false
+end
+local function canReceiveDecals(part, origin)
+	if not part:IsA("BasePart") or part:IsA("Terrain") then return false end
+	if part.Transparency > 0 then return false end
+	local min = R8_RTX.DecalPartMinSize
+	local s = part.Size
+	if not (s.X >= min or s.Y >= min or s.Z >= min) then return false end
+	if origin and (part.Position - origin).Magnitude > R8_RTX.DecalRadius then return false end
+	if Players:GetPlayerFromCharacter(part.Parent) then return false end
+	if part:FindFirstAncestorOfClass("Tool") then return false end
+	return true
+end
+local function removePartTextures(part)
+	for _, c in ipairs(part:GetChildren()) do
+		if c:IsA("Decal") and c.Name:match("^" .. TAG.DECAL) then c:Destroy() end
+	end
+end
+local function updateTransparency(part)
+	if not part.Parent then return end
+	if part.Transparency >= 1 then
+		removePartTextures(part)
+		part.LocalTransparencyModifier = -1
+		return
+	end
+	part.LocalTransparencyModifier = part.Transparency > 0 and -part.Transparency or 0
+end
+local function watchTransparency(part)
+	if watchedParts[part] then return end
+	watchedParts[part] = true
+	updateTransparency(part)
+	transparencyConnections[part] = part:GetPropertyChangedSignal("Transparency"):Connect(function()
+		updateTransparency(part)
+	end)
+end
+local function stampPart(part, origin)
+	if decalInstanceCount >= R8_RTX.MaxDecalInstances then return end
+	if not canReceiveDecals(part, origin) or partHasOurDecals(part) then return end
+	for _, entry in ipairs(DECAL_FACES) do
+		if decalInstanceCount >= R8_RTX.MaxDecalInstances then break end
+		local d = Instance.new("Decal")
+		d.Name = TAG.DECAL .. entry.Face.Name
+		d.Texture = entry.Texture
+		d.Transparency = DECAL_TRANSPARENCY
+		d.Face = entry.Face
+		d.Parent = part
+		decalInstanceCount += 1
+	end
+	watchTransparency(part)
+end
+local function removeDecalsAndUnwatch(part)
+	local removed = 0
+	for _, c in ipairs(part:GetChildren()) do
+		if c:IsA("Decal") and c.Name:match("^" .. TAG.DECAL) then c:Destroy() removed += 1 end
+	end
+	decalInstanceCount = math.max(0, decalInstanceCount - removed)
+	local conn = transparencyConnections[part]
+	if conn then pcall(function() conn:Disconnect() end) transparencyConnections[part] = nil end
+	watchedParts[part] = nil
+	if part.Parent then part.LocalTransparencyModifier = 0 end
+end
+
+local decalQueue, decalQueueIndex, decalQueueRunning = {}, 1, false
+local function processDecalQueue()
+	if decalQueueRunning then return end
+	decalQueueRunning = true
+	local processed, origin = 0, getPlayerOrigin()
+	while decalQueueIndex <= #decalQueue do
+		if processed == 0 then origin = getPlayerOrigin() end
+		local part = decalQueue[decalQueueIndex]
+		decalQueueIndex += 1
+		if part and part.Parent then stampPart(part, origin) end
+		processed += 1
+		if processed >= R8_RTX.DecalBatchSize then processed = 0 RunService.Heartbeat:Wait() end
+	end
+	table.clear(decalQueue)
+	decalQueueIndex = 1
+	decalQueueRunning = false
+end
+local function enqueueDecalTarget(part) table.insert(decalQueue, part) end
+
+local decalRangeLoopRunning = false
+local function decalRangeCheckLoop()
+	if decalRangeLoopRunning then return end
+	decalRangeLoopRunning = true
+	while R8_RTX.Applied and R8_RTX.DecalsEnabled do
+		local origin, speed = getPlayerOrigin()
+		if origin then
+			local buffer = R8_RTX.DecalRemoveBufferBase + speed * R8_RTX.DecalRangeCheckInterval * 1.5
+			local removeRadius = R8_RTX.DecalRadius + buffer
+			local cellRadius = math.ceil(removeRadius / DECAL_GRID_SIZE)
+			local key = decalCellKey(origin)
+			local ox = tonumber(key:match("^(%-?%d+)")) or 0
+			local oy = tonumber(key:match("^%-?%d+:(%-?%d+)")) or 0
+			local oz = tonumber(key:match(":(%-?%d+)$")) or 0
+			local toStamp, seen = {}, {}
+			for x = ox - cellRadius, ox + cellRadius do
+				for y = oy - cellRadius, oy + cellRadius do
+					for z = oz - cellRadius, oz + cellRadius do
+						local bucket = decalGrid[x .. ":" .. y .. ":" .. z]
+						if bucket then
+							for _, part in ipairs(bucket) do
+								if part.Parent and not seen[part] and not partHasOurDecals(part) then
+									seen[part] = true
+									if (part.Position - origin).Magnitude <= R8_RTX.DecalRadius then
+										table.insert(toStamp, part)
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+			if #toStamp > 0 then
+				for _, part in ipairs(toStamp) do enqueueDecalTarget(part) end
+				processDecalQueue()
+			end
+			for part in pairs(watchedParts) do
+				if part.Parent then
+					if (part.Position - origin).Magnitude > removeRadius then
+						removeDecalsAndUnwatch(part)
+					end
+				else
+					watchedParts[part] = nil
+				end
+			end
+		end
+		task.wait(R8_RTX.DecalRangeCheckInterval)
+	end
+	decalRangeLoopRunning = false
+end
+
+local function clearDecals()
+	local removed = 0
+	for _, inst in ipairs(Workspace:GetDescendants()) do
+		if inst:IsA("Decal") and inst.Name:match("^" .. TAG.DECAL) then
+			inst:Destroy()
+			removed += 1
+			if removed % 40 == 0 then RunService.Heartbeat:Wait() end
+		end
+	end
+	decalInstanceCount = 0
+end
+
+-- Contact color (same as before, abbreviated batch)
+local function applyContactColorTint(candidateParts)
+	if not R8_RTX.ContactColorEnabled then return end
+	local COLOR_DISTANCE, DARKEN_AMOUNT, GRID_SIZE = 0.018, 0.16, 12
+	local function isColorPart(part)
+		if not part:IsA("BasePart") or part:IsA("Terrain") or part.Transparency ~= 0 then return false end
+		if Players:GetPlayerFromCharacter(part.Parent) then return false end
+		if part:FindFirstAncestorOfClass("Tool") then return false end
+		return true
+	end
+	local function cellKey(pos)
+		return math.floor(pos.X/GRID_SIZE)..":"..math.floor(pos.Y/GRID_SIZE)..":"..math.floor(pos.Z/GRID_SIZE)
+	end
+	local grid, parts = {}, {}
+	for _, inst in ipairs(candidateParts) do
+		if isColorPart(inst) then
+			local k = cellKey(inst.Position)
+			grid[k] = grid[k] or {}
+			table.insert(grid[k], inst)
+			table.insert(parts, inst)
+		end
+	end
+	local processed = {}
+	for index, a in ipairs(parts) do
+		if a.Parent and not processed[a] then
+			local ax = math.floor(a.Position.X/GRID_SIZE)
+			local ay = math.floor(a.Position.Y/GRID_SIZE)
+			local az = math.floor(a.Position.Z/GRID_SIZE)
+			for x = ax-1, ax+1 do
+				for y = ay-1, ay+1 do
+					for z = az-1, az+1 do
+						local nearby = grid[x..":"..y..":"..z]
+						if nearby then
+							for _, b in ipairs(nearby) do
+								if b ~= a and b.Parent and not processed[b] and isColorPart(b) then
+									local ca, cb = a.Color, b.Color
+									if math.abs(ca.R-cb.R)<=COLOR_DISTANCE and math.abs(ca.G-cb.G)<=COLOR_DISTANCE and math.abs(ca.B-cb.B)<=COLOR_DISTANCE then
+										local d = a.Position - b.Position
+										local mx = (a.Size.X+b.Size.X)*0.5+0.05
+										local my = (a.Size.Y+b.Size.Y)*0.5+0.05
+										local mz = (a.Size.Z+b.Size.Z)*0.5+0.05
+										if math.abs(d.X)<=mx and math.abs(d.Y)<=my and math.abs(d.Z)<=mz then
+											b.Color = Color3.new(cb.R*(1-DARKEN_AMOUNT), cb.G*(1-DARKEN_AMOUNT), cb.B*(1-DARKEN_AMOUNT))
+											processed[a], processed[b] = true, true
+											break
+										end
+									end
+								end
+							end
+						end
+						if processed[a] then break end
+					end
+					if processed[a] then break end
+				end
+				if processed[a] then break end
+			end
+		end
+		if index % R8_RTX.ColorBatchSize == 0 then RunService.Heartbeat:Wait() end
+	end
+end
+
+local function collectWorkspaceTargets()
+	local decalTargets, colorTargets, soundTargets = {}, {}, {}
+	for _, inst in ipairs(Workspace:GetDescendants()) do
+		if inst:IsA("BasePart") and inst.Parent then
+			if inst:FindFirstAncestorOfClass("Model") then table.insert(decalTargets, inst) end
+			table.insert(colorTargets, inst)
+		elseif inst:IsA("Sound") then
+			table.insert(soundTargets, inst)
+		end
+	end
+	return decalTargets, colorTargets, soundTargets
+end
+
+local descendantConnection
+local newInstanceBuffer, flushScheduled = {}, false
+local function flushNewInstances()
+	flushScheduled = false
+	local batch = newInstanceBuffer
+	newInstanceBuffer = {}
+	for _, inst in ipairs(batch) do
+		if inst.Parent then enqueueDecalTarget(inst) end
+	end
+	processDecalQueue()
+end
+local function handleNewInstance(inst)
+	if inst:IsA("Sound") then
+		if R8_RTX.DistanceMuffleEnabled then watchSoundLifecycle(inst) end
+		return
+	end
+	if not inst:IsA("BasePart") then return end
+	if R8_RTX.DecalsEnabled and inst:FindFirstAncestorOfClass("Model") then
+		addToDecalGrid(inst)
+		table.insert(newInstanceBuffer, inst)
+		if not flushScheduled then
+			flushScheduled = true
+			task.delay(0.5, flushNewInstances)
+		end
+	end
+end
+
+function R8_RTX.SetMode(mode)
+	mode = tostring(mode or "auto"):lower()
+	if mode ~= "auto" and mode ~= "day" and not PRESETS[mode] then mode = "auto" end
+	R8_RTX.Mode = mode
+	if R8_RTX.LightingEnabled and R8_RTX.Applied then
+		applyLightingPreset(resolveMode(mode))
+	end
+	return R8_RTX.Mode
+end
+
+function R8_RTX.SetOptions(opts)
+	if type(opts) ~= "table" then return end
+	if opts.DecalsEnabled ~= nil then R8_RTX.DecalsEnabled = opts.DecalsEnabled and true or false end
+	if opts.MaterialsEnabled ~= nil then R8_RTX.MaterialsEnabled = opts.MaterialsEnabled and true or false end
+	if opts.BloomEnabled ~= nil then R8_RTX.BloomEnabled = opts.BloomEnabled and true or false end
+	if opts.LightingEnabled ~= nil then R8_RTX.LightingEnabled = opts.LightingEnabled and true or false end
+	if typeof(opts.MaxDecalInstances) == "number" then
+		R8_RTX.MaxDecalInstances = math.clamp(math.floor(opts.MaxDecalInstances), 0, 50000)
+	end
+	if R8_RTX.Applied and R8_RTX.LightingEnabled then
+		applyLightingPreset(resolveMode(R8_RTX.Mode))
+	end
+end
+
+function R8_RTX.Apply(mode)
+	if mode then R8_RTX.Mode = tostring(mode):lower() end
+	if R8_RTX.Applied then
+		R8_RTX.Revert()
+	end
+	R8_RTX.Applied = true
+
+	if R8_RTX.LightingEnabled then
+		applyLightingPreset(resolveMode(R8_RTX.Mode))
+	end
+	if R8_RTX.MaterialsEnabled then
+		applyMaterials()
+	end
+	if R8_RTX.AudioEnabled then
+		applyAudioEnhancements()
+	end
+
+	local decalTargets, colorTargets, soundTargets = collectWorkspaceTargets()
+
+	if R8_RTX.DecalsEnabled then
+		buildDecalGrid(decalTargets)
+		task.spawn(decalRangeCheckLoop)
+	end
+	if R8_RTX.ContactColorEnabled then
+		task.spawn(function()
+			task.wait(2)
+			applyContactColorTint(colorTargets)
+		end)
+	end
+	if R8_RTX.DistanceMuffleEnabled then
+		for _, s in ipairs(soundTargets) do watchSoundLifecycle(s) end
+		task.spawn(muffleUpdateLoop)
+	end
+	if not descendantConnection then
+		descendantConnection = Workspace.DescendantAdded:Connect(handleNewInstance)
+	end
+	return true
+end
+
+function R8_RTX.Revert()
+	R8_RTX.Applied = false
+	clearOwnedLighting()
+	clearDecals()
+	clearOwnedAudio()
+	audioApplied = false
+	clearMaterials()
+	revertMuffling()
+	if descendantConnection then
+		descendantConnection:Disconnect()
+		descendantConnection = nil
+	end
+	for part, connection in pairs(transparencyConnections) do
+		pcall(function() connection:Disconnect() end)
+		if part and part.Parent then part.LocalTransparencyModifier = 0 end
+	end
+	table.clear(transparencyConnections)
+	table.clear(watchedParts)
+	table.clear(decalQueue)
+	table.clear(newInstanceBuffer)
+	table.clear(decalGrid)
+	decalQueueIndex = 1
+	decalQueueRunning = false
+	decalRangeLoopRunning = false
+	flushScheduled = false
+	return true
+end
+
+function R8_RTX.IsApplied()
+	return R8_RTX.Applied == true
+end
+
+-- No auto-run — UI loads and calls Apply
+if typeof(getgenv) == "function" then
+	getgenv().R8_RTX = R8_RTX
+	getgenv().R8X = R8_RTX
+end
+return R8_RTX
