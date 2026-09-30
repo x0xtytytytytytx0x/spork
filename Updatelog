@@ -1,12 +1,20 @@
 {
-  "version": "0.0",
-  "currentVersion": "0.0",
+"currentVersion": "0.1",
+"version": "0.1",
+  "changelog": [
+    {
+      "version": "0.1",
+      "notes": [
+        "Added R8X/RTX and controls to it.",
+
+      ]
+    }
   "changelog": [
     {
       "version": "0.0",
       "notes": [
-        "Clean slate"
+        "Library made and now open to public",
       ]
-    }
+}
   ]
 }
