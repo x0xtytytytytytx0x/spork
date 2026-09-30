@@ -1,4 +1,3 @@
-
 {
   "version": "0.1",
   "currentVersion": "0.1",
@@ -6,15 +5,14 @@
     {
       "version": "0.1",
       "notes": [
-"Added RTX/R8X to settings",
+        "Added RTX/R8X to settings"
       ]
     },
     {
       "version": "0.0",
       "notes": [
-"Library set to public and public use.",
+        "Library set to public and public use."
       ]
-    },
-
+    }
   ]
 }
