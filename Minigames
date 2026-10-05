@@ -1,1 +1,924 @@
 
+--[[
+	R8 Minigames (remote module)
+	Upload to: https://raw.githubusercontent.com/x0xtytytytytytx0x/spork/refs/heads/main/Minigames
+
+	API:
+	  local MG = loadstring(game:HttpGet(url))()
+	  MG.OpenHub()           -- launcher with balance + open games
+	  MG.OpenBank()
+	  MG.OpenBlackjack()
+	  MG.OpenTicTacToe()
+	  MG.GetBalance()
+	  MG.Save() / MG.Load()
+
+	Saves: R8TW0/minigames.json (Potassium / executor FS)
+	Windows: draggable, minimize, close — DisplayOrder always on top
+]]
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
+
+local SAVE_PATH = "R8TW0/minigames.json"
+local STARTING_CASH = 1000
+local DISPLAY_ORDER = 2147483646 -- above core / esc menus when possible
+
+local MG = {
+	Version = "1.0",
+	_windows = {},
+	_data = nil,
+}
+
+------------------------------------------------------------
+-- Persistence
+------------------------------------------------------------
+local function fsOk()
+	return typeof(writefile) == "function" and typeof(readfile) == "function"
+end
+
+local function ensureRoot()
+	if not fsOk() then return end
+	pcall(function()
+		if typeof(makefolder) == "function" then
+			if typeof(isfolder) ~= "function" or not isfolder("R8TW0") then
+				makefolder("R8TW0")
+			end
+		end
+	end)
+end
+
+local function defaultData()
+	return {
+		balance = STARTING_CASH,
+		loanPrincipal = 0,
+		loanOwed = 0,
+		loanRate = 0.15, -- 15% interest per take / compound on late
+		loanStrikes = 0,
+		stats = {
+			bjWins = 0,
+			bjLosses = 0,
+			tttWins = 0,
+			tttLosses = 0,
+			tttDraws = 0,
+		},
+		lastSave = os.time(),
+	}
+end
+
+function MG.Load()
+	local d = defaultData()
+	if fsOk() then
+		pcall(function()
+			if typeof(isfile) == "function" and not isfile(SAVE_PATH) then return end
+			local raw = readfile(SAVE_PATH)
+			local ok, decoded = pcall(function()
+				return HttpService:JSONDecode(raw)
+			end)
+			if ok and type(decoded) == "table" then
+				for k, v in pairs(decoded) do
+					if k == "stats" and type(v) == "table" then
+						for sk, sv in pairs(v) do
+							d.stats[sk] = sv
+						end
+					else
+						d[k] = v
+					end
+				end
+			end
+		end)
+	end
+	d.balance = math.max(0, math.floor(tonumber(d.balance) or STARTING_CASH))
+	d.loanOwed = math.max(0, tonumber(d.loanOwed) or 0)
+	d.loanPrincipal = math.max(0, tonumber(d.loanPrincipal) or 0)
+	MG._data = d
+	return d
+end
+
+function MG.Save()
+	if not MG._data then MG.Load() end
+	MG._data.lastSave = os.time()
+	if not fsOk() then return false end
+	ensureRoot()
+	local ok = pcall(function()
+		writefile(SAVE_PATH, HttpService:JSONEncode(MG._data))
+	end)
+	return ok == true
+end
+
+function MG.GetBalance()
+	if not MG._data then MG.Load() end
+	return MG._data.balance
+end
+
+local function addCash(n)
+	if not MG._data then MG.Load() end
+	MG._data.balance = math.max(0, math.floor(MG._data.balance + (tonumber(n) or 0)))
+	MG.Save()
+	return MG._data.balance
+end
+
+local function trySpend(n)
+	n = math.floor(tonumber(n) or 0)
+	if n <= 0 then return false end
+	if not MG._data then MG.Load() end
+	if MG._data.balance < n then return false end
+	MG._data.balance -= n
+	MG.Save()
+	return true
+end
+
+------------------------------------------------------------
+-- UI helpers (floating windows)
+------------------------------------------------------------
+local function corner(p, r)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, r or 8)
+	c.Parent = p
+	return c
+end
+
+local function stroke(p, color, t)
+	local s = Instance.new("UIStroke")
+	s.Color = color or Color3.fromRGB(80, 90, 120)
+	s.Thickness = t or 1
+	s.Parent = p
+	return s
+end
+
+local function label(parent, props)
+	local l = Instance.new("TextLabel")
+	l.BackgroundTransparency = 1
+	l.Font = Enum.Font.GothamMedium
+	l.TextSize = 14
+	l.TextColor3 = Color3.fromRGB(230, 235, 255)
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	for k, v in pairs(props or {}) do
+		l[k] = v
+	end
+	l.Parent = parent
+	return l
+end
+
+local function button(parent, props, cb)
+	local b = Instance.new("TextButton")
+	b.AutoButtonColor = true
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 13
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.BackgroundColor3 = Color3.fromRGB(90, 116, 253)
+	b.BorderSizePixel = 0
+	for k, v in pairs(props or {}) do
+		b[k] = v
+	end
+	corner(b, 6)
+	b.Parent = parent
+	if cb then
+		b.MouseButton1Click:Connect(cb)
+	end
+	return b
+end
+
+local function getHost()
+	local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
+	local host = pg:FindFirstChild("R8_MinigamesHost")
+	if not host then
+		host = Instance.new("ScreenGui")
+		host.Name = "R8_MinigamesHost"
+		host.ResetOnSpawn = false
+		host.IgnoreGuiInset = true
+		host.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+		host.DisplayOrder = DISPLAY_ORDER
+		host.Parent = pg
+	else
+		host.DisplayOrder = DISPLAY_ORDER
+	end
+	return host
+end
+
+local function makeWindow(id, titleText, size)
+	if MG._windows[id] and MG._windows[id].gui and MG._windows[id].gui.Parent then
+		MG._windows[id].gui.Enabled = true
+		return MG._windows[id]
+	end
+
+	local host = getHost()
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "R8MG_" .. id
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	gui.DisplayOrder = DISPLAY_ORDER
+	gui.Parent = host.Parent -- sibling under PlayerGui so DisplayOrder competes at top level
+
+	local w, h = size.X, size.Y
+	local main = Instance.new("Frame")
+	main.Name = "Main"
+	main.Size = UDim2.fromOffset(w, h)
+	main.Position = UDim2.new(0.5, -w / 2, 0.5, -h / 2)
+	main.BackgroundColor3 = Color3.fromRGB(18, 20, 28)
+	main.BorderSizePixel = 0
+	main.Active = true
+	main.Parent = gui
+	corner(main, 10)
+	stroke(main, Color3.fromRGB(90, 116, 253), 1.5)
+
+	local top = Instance.new("Frame")
+	top.Name = "TopBar"
+	top.Size = UDim2.new(1, 0, 0, 32)
+	top.BackgroundColor3 = Color3.fromRGB(28, 32, 44)
+	top.BorderSizePixel = 0
+	top.Parent = main
+	corner(top, 10)
+
+	-- cover bottom corners of top bar
+	local topCover = Instance.new("Frame")
+	topCover.BackgroundColor3 = top.BackgroundColor3
+	topCover.BorderSizePixel = 0
+	topCover.Position = UDim2.new(0, 0, 1, -10)
+	topCover.Size = UDim2.new(1, 0, 0, 10)
+	topCover.Parent = top
+
+	local title = label(top, {
+		Text = titleText,
+		Position = UDim2.new(0, 12, 0, 0),
+		Size = UDim2.new(1, -90, 1, 0),
+		Font = Enum.Font.GothamBold,
+		TextSize = 14,
+	})
+
+	local body = Instance.new("Frame")
+	body.Name = "Body"
+	body.BackgroundTransparency = 1
+	body.Position = UDim2.new(0, 10, 0, 40)
+	body.Size = UDim2.new(1, -20, 1, -50)
+	body.Parent = main
+
+	local minimized = false
+	local minBtn = button(top, {
+		Text = "–",
+		Size = UDim2.fromOffset(26, 22),
+		Position = UDim2.new(1, -60, 0.5, -11),
+		BackgroundColor3 = Color3.fromRGB(60, 70, 100),
+	}, function()
+		minimized = not minimized
+		body.Visible = not minimized
+		main.Size = minimized and UDim2.fromOffset(w, 32) or UDim2.fromOffset(w, h)
+	end)
+
+	local closeBtn = button(top, {
+		Text = "×",
+		Size = UDim2.fromOffset(26, 22),
+		Position = UDim2.new(1, -30, 0.5, -11),
+		BackgroundColor3 = Color3.fromRGB(200, 60, 70),
+		TextSize = 16,
+	}, function()
+		gui:Destroy()
+		MG._windows[id] = nil
+	end)
+
+	-- drag
+	local dragging, dragStart, startPos
+	top.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = main.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if not dragging then return end
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			local delta = input.Position - dragStart
+			main.Position = UDim2.new(
+				startPos.X.Scale,
+				startPos.X.Offset + delta.X,
+				startPos.Y.Scale,
+				startPos.Y.Offset + delta.Y
+			)
+		end
+	end)
+
+	local win = {
+		gui = gui,
+		main = main,
+		body = body,
+		title = title,
+		setTitle = function(_, t)
+			title.Text = t
+		end,
+	}
+	MG._windows[id] = win
+	return win
+end
+
+local function moneyLabel(n)
+	return "$" .. tostring(math.floor(tonumber(n) or 0))
+end
+
+------------------------------------------------------------
+-- BANK
+------------------------------------------------------------
+function MG.OpenBank()
+	if not MG._data then MG.Load() end
+	local win = makeWindow("bank", "R8 Bank", Vector2.new(340, 320))
+	local body = win.body
+	for _, c in ipairs(body:GetChildren()) do
+		c:Destroy()
+	end
+
+	local balLbl = label(body, {
+		Text = "Balance: " .. moneyLabel(MG._data.balance),
+		Size = UDim2.new(1, 0, 0, 22),
+		Font = Enum.Font.GothamBold,
+		TextSize = 16,
+	})
+	local loanLbl = label(body, {
+		Text = "Loan owed: " .. moneyLabel(MG._data.loanOwed),
+		Position = UDim2.new(0, 0, 0, 26),
+		Size = UDim2.new(1, 0, 0, 20),
+		TextColor3 = Color3.fromRGB(255, 180, 120),
+	})
+	local info = label(body, {
+		Text = "Interest: "
+			.. tostring(math.floor((MG._data.loanRate or 0.15) * 100))
+			.. "%  ·  Strikes: "
+			.. tostring(MG._data.loanStrikes or 0),
+		Position = UDim2.new(0, 0, 0, 48),
+		Size = UDim2.new(1, 0, 0, 18),
+		TextSize = 12,
+		TextColor3 = Color3.fromRGB(150, 160, 190),
+	})
+
+	local status = label(body, {
+		Text = "",
+		Position = UDim2.new(0, 0, 0, 72),
+		Size = UDim2.new(1, 0, 0, 18),
+		TextSize = 12,
+		TextColor3 = Color3.fromRGB(140, 220, 160),
+	})
+
+	local function refresh()
+		balLbl.Text = "Balance: " .. moneyLabel(MG._data.balance)
+		loanLbl.Text = "Loan owed: " .. moneyLabel(MG._data.loanOwed)
+		info.Text = "Interest: "
+			.. tostring(math.floor((MG._data.loanRate or 0.15) * 100))
+			.. "%  ·  Strikes: "
+			.. tostring(MG._data.loanStrikes or 0)
+	end
+
+	local amounts = { 100, 250, 500, 1000 }
+	for i, amt in ipairs(amounts) do
+		button(body, {
+			Text = "Borrow " .. moneyLabel(amt),
+			Size = UDim2.new(0.48, -4, 0, 32),
+			Position = UDim2.new((i % 2 == 1) and 0 or 0.52, 0, 0, 100 + math.floor((i - 1) / 2) * 40),
+			BackgroundColor3 = Color3.fromRGB(70, 130, 90),
+		}, function()
+			local rate = MG._data.loanRate or 0.15
+			-- higher strikes → worse rate
+			local effective = rate + (MG._data.loanStrikes or 0) * 0.05
+			local owedAdd = math.floor(amt * (1 + effective))
+			MG._data.loanPrincipal += amt
+			MG._data.loanOwed += owedAdd
+			addCash(amt)
+			status.Text = "Borrowed " .. moneyLabel(amt) .. " — owe +" .. moneyLabel(owedAdd)
+			status.TextColor3 = Color3.fromRGB(255, 200, 120)
+			refresh()
+		end)
+	end
+
+	button(body, {
+		Text = "Pay $100",
+		Size = UDim2.new(0.48, -4, 0, 32),
+		Position = UDim2.new(0, 0, 0, 190),
+		BackgroundColor3 = Color3.fromRGB(90, 116, 253),
+	}, function()
+		local pay = math.min(100, MG._data.loanOwed)
+		if pay <= 0 then
+			status.Text = "No loan to pay."
+			return
+		end
+		if not trySpend(pay) then
+			status.Text = "Not enough cash."
+			status.TextColor3 = Color3.fromRGB(255, 100, 100)
+			return
+		end
+		MG._data.loanOwed -= pay
+		if MG._data.loanOwed <= 0 then
+			MG._data.loanOwed = 0
+			MG._data.loanPrincipal = 0
+			MG._data.loanStrikes = 0
+			MG._data.loanRate = 0.15
+			status.Text = "Loan cleared!"
+			status.TextColor3 = Color3.fromRGB(120, 255, 140)
+		else
+			status.Text = "Paid " .. moneyLabel(pay)
+			status.TextColor3 = Color3.fromRGB(140, 220, 160)
+		end
+		MG.Save()
+		refresh()
+	end)
+
+	button(body, {
+		Text = "Pay ALL",
+		Size = UDim2.new(0.48, -4, 0, 32),
+		Position = UDim2.new(0.52, 0, 0, 190),
+		BackgroundColor3 = Color3.fromRGB(90, 116, 253),
+	}, function()
+		local pay = MG._data.loanOwed
+		if pay <= 0 then
+			status.Text = "No loan to pay."
+			return
+		end
+		if not trySpend(pay) then
+			status.Text = "Need " .. moneyLabel(pay) .. " to clear."
+			status.TextColor3 = Color3.fromRGB(255, 100, 100)
+			return
+		end
+		MG._data.loanOwed = 0
+		MG._data.loanPrincipal = 0
+		MG._data.loanStrikes = 0
+		MG._data.loanRate = 0.15
+		MG.Save()
+		status.Text = "Loan cleared!"
+		status.TextColor3 = Color3.fromRGB(120, 255, 140)
+		refresh()
+	end)
+
+	button(body, {
+		Text = "Compound interest (simulate late)",
+		Size = UDim2.new(1, 0, 0, 30),
+		Position = UDim2.new(0, 0, 0, 232),
+		BackgroundColor3 = Color3.fromRGB(140, 70, 70),
+	}, function()
+		if MG._data.loanOwed <= 0 then
+			status.Text = "No active loan."
+			return
+		end
+		local rate = (MG._data.loanRate or 0.15) + 0.05
+		MG._data.loanOwed = math.floor(MG._data.loanOwed * (1 + rate))
+		MG._data.loanStrikes = (MG._data.loanStrikes or 0) + 1
+		MG._data.loanRate = math.min(0.5, (MG._data.loanRate or 0.15) + 0.02)
+		MG.Save()
+		status.Text = "Interest applied. Owed rose."
+		status.TextColor3 = Color3.fromRGB(255, 140, 100)
+		refresh()
+	end)
+
+	refresh()
+end
+
+------------------------------------------------------------
+-- BLACKJACK
+------------------------------------------------------------
+local function cardValue(rank)
+	if rank >= 10 then return 10 end
+	return rank
+end
+
+local function handTotal(cards)
+	local total, aces = 0, 0
+	for _, c in ipairs(cards) do
+		if c == 1 then
+			aces += 1
+			total += 11
+		else
+			total += cardValue(c)
+		end
+	end
+	while total > 21 and aces > 0 do
+		total -= 10
+		aces -= 1
+	end
+	return total
+end
+
+local function drawCard()
+	return math.random(1, 13)
+end
+
+local function cardsStr(cards)
+	local names = { "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K" }
+	local t = {}
+	for _, c in ipairs(cards) do
+		table.insert(t, names[c] or "?")
+	end
+	return table.concat(t, " ")
+end
+
+function MG.OpenBlackjack()
+	if not MG._data then MG.Load() end
+	local win = makeWindow("bj", "Blackjack", Vector2.new(360, 340))
+	local body = win.body
+	for _, c in ipairs(body:GetChildren()) do
+		c:Destroy()
+	end
+
+	local bet = 50
+	local player, dealer = {}, {}
+	local inRound = false
+
+	local balLbl = label(body, {
+		Text = "Balance: " .. moneyLabel(MG._data.balance),
+		Size = UDim2.new(1, 0, 0, 20),
+		Font = Enum.Font.GothamBold,
+	})
+	local betLbl = label(body, {
+		Text = "Bet: " .. moneyLabel(bet),
+		Position = UDim2.new(0, 0, 0, 22),
+		Size = UDim2.new(1, 0, 0, 18),
+	})
+	local dealerLbl = label(body, {
+		Text = "Dealer: —",
+		Position = UDim2.new(0, 0, 0, 55),
+		Size = UDim2.new(1, 0, 0, 22),
+		TextSize = 15,
+	})
+	local playerLbl = label(body, {
+		Text = "You: —",
+		Position = UDim2.new(0, 0, 0, 80),
+		Size = UDim2.new(1, 0, 0, 22),
+		TextSize = 15,
+	})
+	local msg = label(body, {
+		Text = "Place a bet and Deal.",
+		Position = UDim2.new(0, 0, 0, 110),
+		Size = UDim2.new(1, 0, 0, 40),
+		TextWrapped = true,
+		TextColor3 = Color3.fromRGB(180, 190, 220),
+		TextSize = 13,
+	})
+
+	local function refreshBal()
+		balLbl.Text = "Balance: " .. moneyLabel(MG._data.balance)
+		betLbl.Text = "Bet: " .. moneyLabel(bet)
+	end
+
+	local function endRound(result)
+		inRound = false
+		if result == "win" then
+			addCash(bet * 2)
+			MG._data.stats.bjWins = (MG._data.stats.bjWins or 0) + 1
+			msg.Text = "You win +" .. moneyLabel(bet) .. "!"
+			msg.TextColor3 = Color3.fromRGB(120, 255, 140)
+		elseif result == "blackjack" then
+			local payout = math.floor(bet * 2.5)
+			addCash(payout)
+			MG._data.stats.bjWins = (MG._data.stats.bjWins or 0) + 1
+			msg.Text = "Blackjack! +" .. moneyLabel(payout - bet)
+			msg.TextColor3 = Color3.fromRGB(120, 255, 140)
+		elseif result == "push" then
+			addCash(bet)
+			msg.Text = "Push — bet returned."
+			msg.TextColor3 = Color3.fromRGB(200, 200, 120)
+		else
+			MG._data.stats.bjLosses = (MG._data.stats.bjLosses or 0) + 1
+			MG.Save()
+			msg.Text = "You lose."
+			msg.TextColor3 = Color3.fromRGB(255, 120, 120)
+		end
+		refreshBal()
+	end
+
+	local function showHands(hideDealer)
+		local dShow = hideDealer and (cardsStr({ dealer[1] }) .. " ?") or (cardsStr(dealer) .. " (" .. handTotal(dealer) .. ")")
+		dealerLbl.Text = "Dealer: " .. dShow
+		playerLbl.Text = "You: " .. cardsStr(player) .. " (" .. handTotal(player) .. ")"
+	end
+
+	button(body, { Text = "Bet -", Size = UDim2.fromOffset(60, 28), Position = UDim2.new(0, 0, 0, 160), BackgroundColor3 = Color3.fromRGB(70, 75, 95) }, function()
+		if inRound then return end
+		bet = math.max(10, bet - 25)
+		refreshBal()
+	end)
+	button(body, { Text = "Bet +", Size = UDim2.fromOffset(60, 28), Position = UDim2.new(0, 70, 0, 160), BackgroundColor3 = Color3.fromRGB(70, 75, 95) }, function()
+		if inRound then return end
+		bet = math.min(MG._data.balance, bet + 25)
+		refreshBal()
+	end)
+
+	button(body, {
+		Text = "Deal",
+		Size = UDim2.new(1, 0, 0, 32),
+		Position = UDim2.new(0, 0, 0, 198),
+		BackgroundColor3 = Color3.fromRGB(90, 116, 253),
+	}, function()
+		if inRound then return end
+		if not trySpend(bet) then
+			msg.Text = "Not enough cash. Visit the Bank?"
+			msg.TextColor3 = Color3.fromRGB(255, 120, 120)
+			return
+		end
+		inRound = true
+		player = { drawCard(), drawCard() }
+		dealer = { drawCard(), drawCard() }
+		showHands(true)
+		local pt = handTotal(player)
+		if pt == 21 then
+			showHands(false)
+			endRound("blackjack")
+			return
+		end
+		msg.Text = "Hit or Stand."
+		msg.TextColor3 = Color3.fromRGB(180, 190, 220)
+		refreshBal()
+	end)
+
+	button(body, {
+		Text = "Hit",
+		Size = UDim2.new(0.48, -4, 0, 32),
+		Position = UDim2.new(0, 0, 0, 240),
+		BackgroundColor3 = Color3.fromRGB(70, 130, 90),
+	}, function()
+		if not inRound then return end
+		table.insert(player, drawCard())
+		showHands(true)
+		if handTotal(player) > 21 then
+			showHands(false)
+			endRound("lose")
+		end
+	end)
+
+	button(body, {
+		Text = "Stand",
+		Size = UDim2.new(0.48, -4, 0, 32),
+		Position = UDim2.new(0.52, 0, 0, 240),
+		BackgroundColor3 = Color3.fromRGB(140, 100, 60),
+	}, function()
+		if not inRound then return end
+		while handTotal(dealer) < 17 do
+			table.insert(dealer, drawCard())
+		end
+		showHands(false)
+		local pt, dt = handTotal(player), handTotal(dealer)
+		if dt > 21 or pt > dt then
+			endRound("win")
+		elseif pt == dt then
+			endRound("push")
+		else
+			endRound("lose")
+		end
+	end)
+
+	refreshBal()
+end
+
+------------------------------------------------------------
+-- TIC TAC TOE (vs simple AI) — bet on win
+------------------------------------------------------------
+function MG.OpenTicTacToe()
+	if not MG._data then MG.Load() end
+	local win = makeWindow("ttt", "Tic Tac Toe", Vector2.new(300, 380))
+	local body = win.body
+	for _, c in ipairs(body:GetChildren()) do
+		c:Destroy()
+	end
+
+	local bet = 25
+	local board = { "", "", "", "", "", "", "", "", "" }
+	local over = false
+	local cells = {}
+
+	local balLbl = label(body, {
+		Text = "Balance: " .. moneyLabel(MG._data.balance),
+		Size = UDim2.new(1, 0, 0, 18),
+		Font = Enum.Font.GothamBold,
+	})
+	local betLbl = label(body, {
+		Text = "Bet: " .. moneyLabel(bet) .. " (paid on Deal)",
+		Position = UDim2.new(0, 0, 0, 20),
+		Size = UDim2.new(1, 0, 0, 16),
+		TextSize = 12,
+	})
+	local msg = label(body, {
+		Text = "You are X. Win to double bet.",
+		Position = UDim2.new(0, 0, 0, 40),
+		Size = UDim2.new(1, 0, 0, 18),
+		TextSize = 12,
+		TextColor3 = Color3.fromRGB(180, 190, 220),
+	})
+
+	local grid = Instance.new("Frame")
+	grid.BackgroundTransparency = 1
+	grid.Position = UDim2.new(0.5, -105, 0, 70)
+	grid.Size = UDim2.fromOffset(210, 210)
+	grid.Parent = body
+
+	local function winner()
+		local lines = {
+			{ 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 },
+			{ 1, 4, 7 }, { 2, 5, 8 }, { 3, 6, 9 },
+			{ 1, 5, 9 }, { 3, 5, 7 },
+		}
+		for _, ln in ipairs(lines) do
+			local a, b, c = board[ln[1]], board[ln[2]], board[ln[3]]
+			if a ~= "" and a == b and b == c then
+				return a
+			end
+		end
+		for i = 1, 9 do
+			if board[i] == "" then return nil end
+		end
+		return "draw"
+	end
+
+	local function aiMove()
+		-- win / block / center / random
+		local function try(mark)
+			for i = 1, 9 do
+				if board[i] == "" then
+					board[i] = mark
+					local w = winner()
+					board[i] = ""
+					if w == mark then return i end
+				end
+			end
+			return nil
+		end
+		local m = try("O") or try("X")
+		if not m and board[5] == "" then m = 5 end
+		if not m then
+			local opts = {}
+			for i = 1, 9 do
+				if board[i] == "" then table.insert(opts, i) end
+			end
+			if #opts > 0 then m = opts[math.random(1, #opts)] end
+		end
+		if m then
+			board[m] = "O"
+			if cells[m] then cells[m].Text = "O" end
+		end
+	end
+
+	local function finish(result)
+		over = true
+		if result == "X" then
+			addCash(bet * 2)
+			MG._data.stats.tttWins = (MG._data.stats.tttWins or 0) + 1
+			msg.Text = "You win +" .. moneyLabel(bet) .. "!"
+			msg.TextColor3 = Color3.fromRGB(120, 255, 140)
+		elseif result == "O" then
+			MG._data.stats.tttLosses = (MG._data.stats.tttLosses or 0) + 1
+			MG.Save()
+			msg.Text = "AI wins."
+			msg.TextColor3 = Color3.fromRGB(255, 120, 120)
+		else
+			addCash(bet)
+			MG._data.stats.tttDraws = (MG._data.stats.tttDraws or 0) + 1
+			MG.Save()
+			msg.Text = "Draw — bet returned."
+			msg.TextColor3 = Color3.fromRGB(200, 200, 120)
+		end
+		balLbl.Text = "Balance: " .. moneyLabel(MG._data.balance)
+	end
+
+	local function onCell(i)
+		if over or board[i] ~= "" then return end
+		board[i] = "X"
+		cells[i].Text = "X"
+		local w = winner()
+		if w then
+			finish(w)
+			return
+		end
+		aiMove()
+		w = winner()
+		if w then
+			finish(w)
+		end
+	end
+
+	for i = 1, 9 do
+		local r = math.floor((i - 1) / 3)
+		local c = (i - 1) % 3
+		local cell = button(grid, {
+			Text = "",
+			Size = UDim2.fromOffset(64, 64),
+			Position = UDim2.fromOffset(c * 72, r * 72),
+			BackgroundColor3 = Color3.fromRGB(40, 46, 62),
+			TextSize = 28,
+		}, function()
+			onCell(i)
+		end)
+		cells[i] = cell
+	end
+
+	local function newGame()
+		if not trySpend(bet) then
+			msg.Text = "Not enough cash."
+			msg.TextColor3 = Color3.fromRGB(255, 120, 120)
+			return
+		end
+		board = { "", "", "", "", "", "", "", "", "" }
+		over = false
+		for i = 1, 9 do
+			cells[i].Text = ""
+		end
+		msg.Text = "Your move (X)."
+		msg.TextColor3 = Color3.fromRGB(180, 190, 220)
+		balLbl.Text = "Balance: " .. moneyLabel(MG._data.balance)
+	end
+
+	button(body, {
+		Text = "New game (bet " .. moneyLabel(bet) .. ")",
+		Size = UDim2.new(1, 0, 0, 32),
+		Position = UDim2.new(0, 0, 1, -36),
+		BackgroundColor3 = Color3.fromRGB(90, 116, 253),
+	}, newGame)
+
+	button(body, {
+		Text = "Bet +25",
+		Size = UDim2.fromOffset(80, 24),
+		Position = UDim2.new(1, -80, 0, 18),
+		BackgroundColor3 = Color3.fromRGB(70, 75, 95),
+		TextSize = 11,
+	}, function()
+		if not over and board[1] == "" and board[5] == "" then
+			-- only before first move of unpaid round is messy; just adjust next bet
+		end
+		bet = math.min(MG._data.balance, bet + 25)
+		betLbl.Text = "Bet: " .. moneyLabel(bet) .. " (on New game)"
+	end)
+end
+
+------------------------------------------------------------
+-- HUB launcher
+------------------------------------------------------------
+function MG.OpenHub()
+	if not MG._data then MG.Load() end
+	local win = makeWindow("hub", "R8 Minigames", Vector2.new(300, 260))
+	local body = win.body
+	for _, c in ipairs(body:GetChildren()) do
+		c:Destroy()
+	end
+
+	local bal = label(body, {
+		Text = "Balance: " .. moneyLabel(MG._data.balance),
+		Size = UDim2.new(1, 0, 0, 24),
+		Font = Enum.Font.GothamBold,
+		TextSize = 16,
+	})
+	label(body, {
+		Text = "Loan: " .. moneyLabel(MG._data.loanOwed),
+		Position = UDim2.new(0, 0, 0, 26),
+		Size = UDim2.new(1, 0, 0, 18),
+		TextColor3 = Color3.fromRGB(255, 180, 120),
+		TextSize = 13,
+	})
+
+	button(body, {
+		Text = "Bank",
+		Size = UDim2.new(1, 0, 0, 36),
+		Position = UDim2.new(0, 0, 0, 60),
+		BackgroundColor3 = Color3.fromRGB(70, 130, 90),
+	}, function()
+		MG.OpenBank()
+		bal.Text = "Balance: " .. moneyLabel(MG.GetBalance())
+	end)
+
+	button(body, {
+		Text = "Blackjack",
+		Size = UDim2.new(1, 0, 0, 36),
+		Position = UDim2.new(0, 0, 0, 106),
+		BackgroundColor3 = Color3.fromRGB(90, 116, 253),
+	}, function()
+		MG.OpenBlackjack()
+	end)
+
+	button(body, {
+		Text = "Tic Tac Toe",
+		Size = UDim2.new(1, 0, 0, 36),
+		Position = UDim2.new(0, 0, 0, 152),
+		BackgroundColor3 = Color3.fromRGB(120, 90, 180),
+	}, function()
+		MG.OpenTicTacToe()
+	end)
+
+	button(body, {
+		Text = "Refresh balance",
+		Size = UDim2.new(1, 0, 0, 28),
+		Position = UDim2.new(0, 0, 0, 200),
+		BackgroundColor3 = Color3.fromRGB(50, 55, 70),
+		TextSize = 12,
+	}, function()
+		MG.Load()
+		bal.Text = "Balance: " .. moneyLabel(MG._data.balance)
+	end)
+end
+
+-- boot data
+MG.Load()
+
+if typeof(getgenv) == "function" then
+	getgenv().R8_Minigames = MG
+end
+
+return MG
