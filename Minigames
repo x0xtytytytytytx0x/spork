@@ -198,11 +198,11 @@ local function dayPhase01()
 end
 local DAY_EVENTS = {
 	none = { emoji = "", mult = 1, rate = nil, forceNight = false, label = "" },
-	eclipse = { emoji = "🌑", mult = 1, rate = nil, forceNight = true, label = "Eclipse — night all day" },
-	star = { emoji = "🌠", mult = 2, rate = nil, forceNight = false, label = "Shooting star — 2× earnings" },
-	freebank = { emoji = "🏦", mult = 1, rate = 0, forceNight = false, label = "Bank holiday — 0% interest" },
-	storm = { emoji = "⛈️", mult = 0.5, rate = nil, forceNight = false, label = "Storm — half production" },
-	golden = { emoji = "✨", mult = 1.5, rate = nil, forceNight = false, label = "Golden hour — 1.5× earnings" },
+	eclipse = { emoji = "🌑", mult = 1, rate = nil, forceNight = true, label = "Eclipse - night all day" },
+	star = { emoji = "🌠", mult = 2, rate = nil, forceNight = false, label = "Shooting star - 2× earnings" },
+	freebank = { emoji = "🏦", mult = 1, rate = 0, forceNight = false, label = "Bank holiday - 0% interest" },
+	storm = { emoji = "⛈️", mult = 0.5, rate = nil, forceNight = false, label = "Storm - half production" },
+	golden = { emoji = "✨", mult = 1.5, rate = nil, forceNight = false, label = "Golden hour - 1.5× earnings" },
 }
 local function rollDayEvent(dayNum)
 	-- rare events (~18% any event)
@@ -306,7 +306,7 @@ function advanceDaysIfNeeded()
 				MG._data.cookies = have - paid
 				pushHistory("loan", "Loan expired −" .. tostring(paid), -paid)
 				if paid < take then
-					-- could not fully pay — wipe flag (harsh default)
+					-- could not fully pay - wipe flag (harsh default)
 					MG._data._taxWipe = true
 				end
 			end
@@ -316,7 +316,7 @@ function advanceDaysIfNeeded()
 		end
 	end
 	MG._data.loans = kept
-	-- tax every 5 days — TAX ONLY (loans expire on their own). Amount = CPS×10
+	-- tax every 5 days - TAX ONLY (loans expire on their own). Amount = CPS×10
 	local cycle = math.floor((MG._data.dayNumber - 1) / 5)
 	local paidCycle = math.floor((MG._data.taxDayPaid or 0) / 5)
 	if cycle > paidCycle then
@@ -582,7 +582,7 @@ local function startCPSTicker()
 	end)
 end
 local function dayStatusText()
-	if not MG._data then return "—" end
+	if not MG._data then return "-" end
 	advanceDaysIfNeeded()
 	ensureDayMeta()
 	local phase = dayPhase01()
@@ -1080,7 +1080,7 @@ function MG.OpenClicker()
 		end
 		local list = MG._data.history or {}
 		if #list == 0 then
-			label(histPage, { Text = "No history yet — play minigames or take loans.", Size = UDim2.new(1, -8, 0, 28), TextSize = 11, TextColor3 = col(th, "SubText") })
+			label(histPage, { Text = "No history yet - play minigames or take loans.", Size = UDim2.new(1, -8, 0, 28), TextSize = 11, TextColor3 = col(th, "SubText") })
 			return
 		end
 		for i, e in ipairs(list) do
@@ -1159,7 +1159,7 @@ function MG.OpenClicker()
 			advanceDaysIfNeeded()
 			if MG._data._taxWipe then
 				MG._data._taxWipe = nil
-				taxLbl.Text = "TAX / LOANS UNPAID — YOU LOSE"
+				taxLbl.Text = "TAX / LOANS UNPAID - YOU LOSE"
 				task.wait(1.5)
 				MG.ResetData()
 				MG.OpenClicker()
@@ -1223,7 +1223,7 @@ function MG.OpenBank()
 			if not ch:IsA("UIListLayout") and not ch:IsA("UIPadding") then ch:Destroy() end
 		end
 		if #(MG._data.loans or {}) == 0 then
-			label(list, { Text = "No loans — optional cash, due on tax day.", Size = UDim2.new(1, -8, 0, 20), TextSize = 11, TextColor3 = col(th, "SubText") })
+			label(list, { Text = "No loans - optional cash, due on tax day.", Size = UDim2.new(1, -8, 0, 20), TextSize = 11, TextColor3 = col(th, "SubText") })
 		else
 			for i, ln in ipairs(MG._data.loans) do
 				local held = math.max(0, (MG._data.dayNumber or 1) - (ln.startDay or 1))
@@ -1342,7 +1342,7 @@ function MG.OpenBank()
 		MG._data.taxDayPaid = MG._data.dayNumber or 1
 		pushHistory("tax", "Paid tax early " .. moneyLabel(tax), -tax)
 		MG.Save()
-		status.Text = "Paid tax " .. moneyLabel(tax) .. " (CPS×10) — next cycle in 5 days"
+		status.Text = "Paid tax " .. moneyLabel(tax) .. " (CPS×10) - next cycle in 5 days"
 		earlyTax.Text = "Pay tax " .. moneyLabel(earlyTaxAmount())
 		if typeof(fireBalance) == "function" then fireBalance() end
 	end)
@@ -1364,13 +1364,13 @@ function MG.OpenBank()
 			earlyTax.Text = taxAmt > 0 and ("Pay tax " .. moneyLabel(taxAmt)) or "No tax (0 CPS)"
 			setBorrowVisible(isDaytime())
 			if not isDaytime() then
-				nightGate.Text = "Night — borrowing closed. You can still pay loans / tax."
+				nightGate.Text = "Night - borrowing closed. You can still pay loans / tax."
 				earlyTax.Visible = true
 				payAll.Visible = true
 			end
 			refreshLoans()
 			if MG._data._taxWipe then
-				status.Text = "TAX/LOANS UNPAID — wipe incoming"
+				status.Text = "TAX/LOANS UNPAID - wipe incoming"
 			elseif MG._data._taxSeized then
 				status.Text = "Tax day seized " .. moneyLabel(MG._data._taxSeized)
 				MG._data._taxSeized = nil
