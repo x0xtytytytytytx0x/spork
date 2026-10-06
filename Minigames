@@ -1,4 +1,11 @@
-
+--[[
+	R8//C00KI3S + Minigames  v2.0
+	https://raw.githubusercontent.com/x0xtytytytytytx0x/spork/refs/heads/main/Minigames
+	Cookie Clicker core + side minigames, shared wallet.
+	Cookie: rbxassetid://131611164  Clicker: rbxassetid://100640210821551
+	MG.OpenHub / OpenClicker / OpenBank / ...  MG.ResetData()  MG.BindMainWindow(w)
+	Save: R8TW0/minigames.json  (starts at 0 cookies)
+]]
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
@@ -86,6 +93,11 @@ local UPGRADES = {
 	{ id = "oatmeal", name = "Oatmeal raisin cookies", cost = 9999999, req = {}, cpsMult = 1.15, desc = "Cookie production +15%" },
 	{ id = "sugar_cookies", name = "Sugar cookies", cost = 99999999, req = {}, cpsMult = 1.15, desc = "Cookie production +15%" },
 	{ id = "butter", name = "Butter cookies", cost = 999999999, req = {}, cpsMult = 1.15, desc = "Cookie production +15%" },
+}
+local BUILDING_ICONS = {
+	cursor = "👆", grandma = "rbxassetid://137952597072084", farm = "🌾", mine = "⛏️",
+	factory = "🏭", bank = "🏦", temple = "🛕", wizard = "🧙", shipment = "🚀",
+	lab = "🧪", portal = "🌀", time = "⏳", antimatter = "⚛️", prism = "💎", chance = "🎲",
 }
 local BUILDING_COLORS = {
 	cursor = Color3.fromRGB(200, 200, 210), grandma = Color3.fromRGB(255, 180, 200), farm = Color3.fromRGB(120, 200, 100),
@@ -180,19 +192,29 @@ local function trySpend(n)
 end
 local function fmt(n)
 	n = tonumber(n) or 0
-	local neg = n < 0; n = math.abs(n)
-	local suffixes = { {1e33,"Dc"},{1e30,"No"},{1e27,"Oc"},{1e24,"Sp"},{1e21,"Sx"},{1e18,"Qi"},{1e15,"Qa"},{1e12,"T"},{1e9,"B"},{1e6,"M"},{1e3,"K"} }
+	local neg = n < 0
+	n = math.abs(n)
+	local suffixes = {
+		{ 1e33, "Dc" }, { 1e30, "No" }, { 1e27, "Oc" }, { 1e24, "Sp" },
+		{ 1e21, "Sx" }, { 1e18, "Qi" }, { 1e15, "Qa" }, { 1e12, "T" },
+		{ 1e9, "B" }, { 1e6, "M" }, { 1e3, "K" },
+	}
 	for _, suf in ipairs(suffixes) do
 		if n >= suf[1] then
-			local s = string.format("%.3f", n / suf[1]):gsub("(%..-)0+$", "%1"):gsub("%.$", "")
+			local v = n / suf[1]
+			local s
+			if v >= 100 then s = string.format("%.0f", v)
+			elseif v >= 10 then s = string.format("%.1f", v):gsub("%.0$", "")
+			else s = string.format("%.2f", v):gsub("0+$", ""):gsub("%.$", "") end
 			return (neg and "-" or "") .. s .. suf[2]
 		end
 	end
-	if n >= 100 then return (neg and "-" or "") .. string.format("%.0f", n) end
-	if n >= 10 then return (neg and "-" or "") .. string.format("%.1f", n) end
-	return (neg and "-" or "") .. string.format("%.2f", n)
+	-- under 1000: whole cookies only (no 0.00 clutter)
+	return (neg and "-" or "") .. string.format("%.0f", math.floor(n + 1e-9))
 end
-local function moneyLabel(n) return fmt(n) end
+local function moneyLabel(n)
+	return "$" .. fmt(n)
+end
 local function buildingCost(bdef, owned) return math.ceil(bdef.baseCost * (1.15 ^ owned)) end
 local function getBuildMult(id)
 	local m = 1
@@ -350,24 +372,43 @@ end
 local function makeBalBet(body, id, startBet)
 	local th = detectTheme()
 	local bet = startBet or 25
-	local balLbl = label(body, { Text = "Cookies " .. moneyLabel(MG.GetBalance()), Size = UDim2.new(1, 0, 0, 16), Font = Enum.Font.GothamBold, TextSize = 12 })
-	label(body, { Text = "Bet:", Position = UDim2.new(0, 0, 0, 20), Size = UDim2.new(0, 32, 0, 24), TextSize = 11, TextColor3 = col(th, "SubText") })
+	local balLbl = label(body, { Text = "Cash " .. moneyLabel(MG.GetBalance()), Size = UDim2.new(1, 0, 0, 16), Font = Enum.Font.GothamBold, TextSize = 12 })
+	local function syncBox()
+		box.Text = tostring(bet)
+	end
+	button(body, {
+		Text = "Bet −", Size = UDim2.new(0.28, -2, 0, 24), Position = UDim2.new(0, 0, 0, 20),
+		BackgroundColor3 = col(th, "PanelLight"), TextColor3 = col(th, "Text"), TextSize = 11,
+	}, function()
+		bet = math.max(1, bet - math.max(1, math.floor(bet * 0.25)))
+		if bet > MG.GetBalance() then bet = math.max(1, math.floor(MG.GetBalance())) end
+		syncBox()
+	end)
 	local box = Instance.new("TextBox")
-	box.Size = UDim2.new(1, -36, 0, 24); box.Position = UDim2.new(0, 36, 0, 20)
+	box.Size = UDim2.new(0.44, -4, 0, 24); box.Position = UDim2.new(0.28, 2, 0, 20)
 	box.BackgroundColor3 = col(th, "Panel"); box.TextColor3 = col(th, "Text")
-	box.PlaceholderText = "amount"; box.PlaceholderColor3 = col(th, "SubText")
-	box.Font = Enum.Font.Gotham; box.TextSize = 12; box.Text = tostring(bet)
+	box.PlaceholderText = "bet"; box.PlaceholderColor3 = col(th, "SubText")
+	box.Font = Enum.Font.GothamBold; box.TextSize = 12; box.Text = tostring(bet)
 	box.ClearTextOnFocus = false; box.BorderSizePixel = 0; box.Parent = body; corner(box, 6)
+	button(body, {
+		Text = "Bet +", Size = UDim2.new(0.28, -2, 0, 24), Position = UDim2.new(0.72, 2, 0, 20),
+		BackgroundColor3 = col(th, "PanelLight"), TextColor3 = col(th, "Text"), TextSize = 11,
+	}, function()
+		local step = math.max(1, math.floor(math.max(bet, 25) * 0.25))
+		bet = math.min(math.floor(MG.GetBalance()), bet + step)
+		if bet < 1 then bet = 1 end
+		syncBox()
+	end)
 	box.FocusLost:Connect(function()
 		local n = tonumber(box.Text)
 		if not n or n < 1 then n = 1 end
 		n = math.floor(n)
 		if n > MG.GetBalance() then n = math.max(1, math.floor(MG.GetBalance())) end
-		bet = n; box.Text = tostring(bet)
+		bet = n; syncBox()
 	end)
 	watchBalance(id, function(b)
-		balLbl.Text = "Cookies " .. moneyLabel(b)
-		if bet > b then bet = math.max(1, math.floor(b)); box.Text = tostring(bet) end
+		balLbl.Text = "Cash " .. moneyLabel(b)
+		if bet > b then bet = math.max(1, math.floor(b)); syncBox() end
 	end)
 	return {
 		getBet = function()
@@ -393,17 +434,95 @@ function MG.OpenClicker()
 	local cookieBtn = Instance.new("ImageButton")
 	cookieBtn.Name = "Cookie"; cookieBtn.BackgroundTransparency = 1; cookieBtn.Image = COOKIE_IMG
 	cookieBtn.Size = UDim2.fromOffset(160, 160); cookieBtn.Position = UDim2.new(0.5, -80, 0, 70); cookieBtn.Parent = left
+	local cursorLayer = Instance.new("Frame")
+	cursorLayer.BackgroundTransparency = 1; cursorLayer.Size = UDim2.fromOffset(200, 200)
+	cursorLayer.Position = UDim2.new(0.5, -100, 0, 50); cursorLayer.ZIndex = 2; cursorLayer.Parent = left
+	local orbitCursors = {}
+	local function rebuildOrbitCursors()
+		for _, c in ipairs(orbitCursors) do c:Destroy() end
+		orbitCursors = {}
+		local n = math.min(24, MG._data.buildings.cursor or 0)
+		for i = 1, n do
+			local lab = Instance.new("TextLabel")
+			lab.BackgroundTransparency = 1; lab.Text = "👆"; lab.TextSize = 18
+			lab.Size = UDim2.fromOffset(24, 24); lab.AnchorPoint = Vector2.new(0.5, 0.5)
+			lab.ZIndex = 3; lab.Parent = cursorLayer
+			orbitCursors[i] = lab
+		end
+	end
+	rebuildOrbitCursors()
+	task.spawn(function()
+		local ang = 0
+		while left.Parent do
+			local n = #orbitCursors
+			if n > 0 then
+				ang += 0.04
+				local radius = 78
+				for i, lab in ipairs(orbitCursors) do
+					local a = ang + (i - 1) * (math.pi * 2 / n)
+					lab.Position = UDim2.new(0.5, math.cos(a) * radius, 0.5, math.sin(a) * radius)
+				end
+			end
+			task.wait(0.03)
+		end
+	end)
+	-- cursors "click" the cookie periodically
+	task.spawn(function()
+		while left.Parent do
+			local n = MG._data.buildings.cursor or 0
+			if n > 0 then
+				local power = computeClickPower() * 0.1 -- visual only; real CPS handles income
+				-- tiny pulse as if auto-clicked
+				cookieBtn.Size = UDim2.fromOffset(156, 156)
+				cookieBtn.Position = UDim2.new(0.5, -78, 0, 72)
+				TweenService:Create(cookieBtn, TweenInfo.new(0.1), {
+					Size = UDim2.fromOffset(160, 160), Position = UDim2.new(0.5, -80, 0, 70),
+				}):Play()
+			end
+			task.wait(math.max(0.15, 1 / math.max(1, (MG._data.buildings.cursor or 0) * 0.1)))
+		end
+	end)
+	local function floatText(txt, color)
+		local f = Instance.new("TextLabel")
+		f.BackgroundTransparency = 1; f.Text = txt; f.Font = Enum.Font.GothamBold
+		f.TextSize = 16; f.TextColor3 = color or Color3.fromRGB(120, 255, 140)
+		f.Size = UDim2.fromOffset(120, 24); f.AnchorPoint = Vector2.new(0.5, 0.5)
+		f.Position = UDim2.new(0.5, math.random(-30, 30), 0, 140)
+		f.ZIndex = 5; f.Parent = left
+		TweenService:Create(f, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Position = f.Position - UDim2.fromOffset(0, 50),
+			TextTransparency = 1,
+		}):Play()
+		task.delay(0.85, function() f:Destroy() end)
+	end
 	local function pulseCookie()
-		cookieBtn.Size = UDim2.fromOffset(150, 150); cookieBtn.Position = UDim2.new(0.5, -75, 0, 75)
-		TweenService:Create(cookieBtn, TweenInfo.new(0.12, Enum.EasingStyle.Back), { Size = UDim2.fromOffset(160, 160), Position = UDim2.new(0.5, -80, 0, 70) }):Play()
+		cookieBtn.Size = UDim2.fromOffset(145, 145); cookieBtn.Position = UDim2.new(0.5, -72, 0, 78)
+		TweenService:Create(cookieBtn, TweenInfo.new(0.15, Enum.EasingStyle.Back), {
+			Size = UDim2.fromOffset(160, 160), Position = UDim2.new(0.5, -80, 0, 70),
+		}):Play()
+		-- crumb particles
+		for i = 1, 5 do
+			local p = Instance.new("Frame")
+			p.BackgroundColor3 = Color3.fromRGB(210, 160, 90); p.BorderSizePixel = 0
+			p.Size = UDim2.fromOffset(5, 5); p.AnchorPoint = Vector2.new(0.5, 0.5)
+			p.Position = UDim2.new(0.5, 0, 0, 150); p.ZIndex = 4; p.Parent = left
+			corner(p, 3)
+			local ox, oy = math.random(-60, 60), math.random(-80, -20)
+			TweenService:Create(p, TweenInfo.new(0.45), {
+				Position = UDim2.new(0.5, ox, 0, 150 + oy), BackgroundTransparency = 1,
+			}):Play()
+			task.delay(0.5, function() p:Destroy() end)
+		end
 	end
 	cookieBtn.MouseButton1Click:Connect(function()
 		local power = computeClickPower()
 		addCookies(power, true)
 		pulseCookie()
+		floatText("+" .. moneyLabel(power), Color3.fromRGB(120, 255, 140))
 		cookieCount.Text = moneyLabel(MG._data.cookies)
 		cpsLbl.Text = "per second: " .. moneyLabel(computeCPS())
 		clickLbl.Text = "per click: " .. moneyLabel(computeClickPower())
+		rebuildOrbitCursors()
 	end)
 	local prestigeLbl = label(left, { Text = "Rebirths: " .. tostring(MG._data.prestige) .. "  (x" .. string.format("%.1f", MG._data.prestigeMult) .. ")", Position = UDim2.new(0, 0, 1, -40), Size = UDim2.new(1, 0, 0, 14), TextSize = 11, TextColor3 = col(th, "SubText"), TextXAlignment = Enum.TextXAlignment.Center })
 	button(left, { Text = "Rebirth", Size = UDim2.new(1, 0, 0, 26), Position = UDim2.new(0, 0, 1, -26), BackgroundColor3 = Color3.fromRGB(160, 100, 220), TextSize = 11 }, function()
@@ -455,10 +574,17 @@ function MG.OpenClicker()
 			local cost = buildingCost(bdef, owned)
 			local row = Instance.new("Frame")
 			row.BackgroundColor3 = col(th, "Background"); row.Size = UDim2.new(1, -8, 0, 48); row.BorderSizePixel = 0; row.Parent = storePage; corner(row, 6)
-			local icon = Instance.new("ImageLabel")
-			icon.BackgroundTransparency = 1; icon.Image = CLICKER_IMG
-			icon.ImageColor3 = BUILDING_COLORS[bdef.id] or Color3.new(1, 1, 1)
-			icon.Size = UDim2.fromOffset(36, 36); icon.Position = UDim2.new(0, 6, 0.5, -18); icon.Parent = row
+			local iconId = BUILDING_ICONS[bdef.id]
+			if type(iconId) == "string" and iconId:find("rbxassetid") then
+				local icon = Instance.new("ImageLabel")
+				icon.BackgroundTransparency = 1; icon.Image = iconId
+				icon.Size = UDim2.fromOffset(36, 36); icon.Position = UDim2.new(0, 6, 0.5, -18); icon.Parent = row
+			else
+				local icon = Instance.new("TextLabel")
+				icon.BackgroundTransparency = 1; icon.Text = iconId or "🍪"
+				icon.TextSize = 22; icon.Size = UDim2.fromOffset(36, 36)
+				icon.Position = UDim2.new(0, 6, 0.5, -18); icon.Parent = row
+			end
 			label(row, { Text = bdef.name .. "  [" .. tostring(owned) .. "]", Position = UDim2.new(0, 48, 0, 4), Size = UDim2.new(1, -120, 0, 16), Font = Enum.Font.GothamBold, TextSize = 12 })
 			label(row, { Text = moneyLabel(bdef.cps * getBuildMult(bdef.id)) .. "/s each", Position = UDim2.new(0, 48, 0, 20), Size = UDim2.new(1, -120, 0, 12), TextSize = 10, TextColor3 = col(th, "SubText") })
 			label(row, { Text = moneyLabel(cost), Position = UDim2.new(0, 48, 0, 32), Size = UDim2.new(1, -120, 0, 12), TextSize = 10, TextColor3 = (MG._data.cookies >= cost) and Color3.fromRGB(120, 255, 140) or col(th, "AccentRed") })
@@ -467,6 +593,7 @@ function MG.OpenClicker()
 				local c = buildingCost(bdef, o)
 				if trySpend(c) then
 					MG._data.buildings[bdef.id] = o + 1; MG.Save(); refreshStore()
+					if bdef.id == "cursor" then pcall(rebuildOrbitCursors) end
 					cpsLbl.Text = "per second: " .. moneyLabel(computeCPS())
 					clickLbl.Text = "per click: " .. moneyLabel(computeClickPower())
 					cookieCount.Text = moneyLabel(MG._data.cookies)
@@ -562,9 +689,9 @@ function MG.OpenBank()
 	local balLbl = label(body, { Text = "Cookies " .. moneyLabel(MG._data.cookies), Size = UDim2.new(1, 0, 0, 18), Font = Enum.Font.GothamBold })
 	local loanLbl = label(body, { Text = "Owed " .. moneyLabel(MG._data.loanOwed), Position = UDim2.new(0, 0, 0, 20), Size = UDim2.new(1, 0, 0, 16), TextColor3 = col(th, "AccentRed"), TextSize = 12 })
 	local status = label(body, { Text = "", Position = UDim2.new(0, 0, 0, 40), Size = UDim2.new(1, 0, 0, 16), TextSize = 11, TextColor3 = col(th, "SubText") })
-	watchBalance("bank", function(b) balLbl.Text = "Cookies " .. moneyLabel(b) end)
+	watchBalance("bank", function(b) balLbl.Text = "Cash " .. moneyLabel(b) end)
 	local function refresh()
-		balLbl.Text = "Cookies " .. moneyLabel(MG._data.cookies)
+		balLbl.Text = "Cash " .. moneyLabel(MG._data.cookies)
 		loanLbl.Text = "Owed " .. moneyLabel(MG._data.loanOwed) .. "  |  rate " .. tostring(math.floor((MG._data.loanRate or 0.15) * 100)) .. "%"
 	end
 	local amounts = { 100, 250, 500, 1000 }
@@ -634,8 +761,8 @@ function MG.OpenBlackjack()
 	local function endRound(result)
 		inRound = false
 		local bet = bb.getBet()
-		if result == "win" then payoutWin(bet); msg.Text = "Win +" .. moneyLabel(bet)
-		elseif result == "blackjack" then addCookies(math.floor(bet * 2.5)); msg.Text = "BJ!"
+		if result == "win" then payoutWin(bet); msg.Text = "Win +" .. moneyLabel(bet) .. "  (2× stake)"
+		elseif result == "blackjack" then local pay = math.floor(bet * 2.5); addCookies(pay); msg.Text = "Blackjack +" .. moneyLabel(pay)
 		elseif result == "push" then payoutPush(bet); msg.Text = "Push"
 		else msg.Text = "Lose" end
 		msg.TextColor3 = (result == "lose") and col(th, "AccentRed") or Color3.fromRGB(120, 255, 140)
@@ -692,7 +819,7 @@ function MG.OpenTicTacToe()
 	end
 	local function finish(result)
 		over = true; local bet = bb.getBet()
-		if result == "X" then payoutWin(bet); msg.Text = "Win +" .. moneyLabel(bet); msg.TextColor3 = Color3.fromRGB(120, 255, 140)
+		if result == "X" then payoutWin(bet); msg.Text = "Win +" .. moneyLabel(bet) .. "  (2×)"; msg.TextColor3 = Color3.fromRGB(120, 255, 140)
 		elseif result == "O" then msg.Text = "Lose"; msg.TextColor3 = col(th, "AccentRed")
 		else payoutPush(bet); msg.Text = "Draw"; msg.TextColor3 = Color3.fromRGB(220, 210, 120) end
 	end
@@ -783,9 +910,9 @@ function MG.OpenHub()
 	local win = makeWindow("hub", "R8//C00KI3S", Vector2.new(280, 380))
 	local body = win.body
 	for _, c in ipairs(body:GetChildren()) do c:Destroy() end
-	local bal = label(body, { Text = "Cookies " .. moneyLabel(MG.GetBalance()), Size = UDim2.new(1, 0, 0, 18), Font = Enum.Font.GothamBold, TextSize = 14 })
+	local bal = label(body, { Text = "Cash " .. moneyLabel(MG.GetBalance()), Size = UDim2.new(1, 0, 0, 18), Font = Enum.Font.GothamBold, TextSize = 14 })
 	label(body, { Text = moneyLabel(computeCPS()) .. "/s  ·  Rebirth " .. tostring(MG._data.prestige), Position = UDim2.new(0, 0, 0, 18), Size = UDim2.new(1, 0, 0, 14), TextColor3 = col(th, "SubText"), TextSize = 11 })
-	watchBalance("hub", function(b) bal.Text = "Cookies " .. moneyLabel(b) end)
+	watchBalance("hub", function(b) bal.Text = "Cash " .. moneyLabel(b) end)
 	local games = {
 		{ "R8//C00KI3S", Color3.fromRGB(200, 140, 80), MG.OpenClicker },
 		{ "Bank", Color3.fromRGB(50, 120, 80), MG.OpenBank },
@@ -801,7 +928,7 @@ function MG.OpenHub()
 		y += 32
 	end
 	button(body, { Text = "RESET DATA → 0 cookies", Size = UDim2.new(1, 0, 0, 26), Position = UDim2.new(0, 0, 1, -28), BackgroundColor3 = col(th, "AccentRed"), TextSize = 11 }, function()
-		MG.ResetData(); bal.Text = "Cookies 0"
+		MG.ResetData(); bal.Text = "Cash $0"
 	end)
 end
 MG.Load()
