@@ -24,7 +24,7 @@ local SND_LOSE = "rbxassetid://125502625456002"
 local ICO_SOUND_ON = "rbxassetid://16601518608"
 local ICO_SOUND_OFF = "rbxassetid://16601516029"
 local MG = {
-	Version = "2.6.1",
+	Version = "2.7",
 	_windows = {}, _data = nil, _theme = nil, _mainWindow = nil,
 	_suppressed = false, _balListeners = {}, _cpsConn = nil,
 	_dayConn = nil, _muted = false, -- cookie-game audio mute
@@ -76,6 +76,10 @@ local function playSfx(id, vol)
 	end)
 end
 local function uiClick() playSfx(SND_CLICK, 0.25) end
+-- forward decls (Lua local visibility) so day/tax code can call them
+local fireBalance, computeCPS, computeClickPower, getCpsMult, getBuildMult, getClickMult, eventEarnMult
+local ensureDayMeta, advanceDaysIfNeeded, earlyTaxAmount
+
 
 local function ensureRoot()
 	if not fsOk() then return end
@@ -174,11 +178,13 @@ local function daysUntilTax()
 	if mod == 0 then return 0 end
 	return 5 - mod
 end
-local function earlyTaxAmount()
-	-- STRICT: tax = floor(CPS × 10). Never forced to $1.
+function earlyTaxAmount()
+	-- STRICT: always floor(cookies-per-second × 10). Same for early or tax day. Never $1 forced.
 	local cps = 0
-	pcall(function() cps = computeCPS() end)
-	cps = tonumber(cps) or 0
+	if typeof(computeCPS) == "function" then
+		local ok, v = pcall(computeCPS)
+		if ok then cps = tonumber(v) or 0 end
+	end
 	if cps < 0 then cps = 0 end
 	return math.floor(cps * 10 + 1e-9)
 end
@@ -215,7 +221,7 @@ local function rollDayRate(dayNum)
 	-- 4% .. 28% varied each day
 	return math.floor(rng:NextNumber(0.04, 0.28) * 1000) / 1000
 end
-local function ensureDayMeta()
+function ensureDayMeta()
 	if not MG._data then return end
 	local d = MG._data.dayNumber or 1
 	if MG._data.dayEventDay ~= d then
@@ -254,7 +260,7 @@ local function currentInterestRate()
 	if r == nil then r = 0.12 end
 	return r
 end
-local function eventEarnMult()
+function eventEarnMult()
 	local ev = getDayEvent()
 	return ev.mult or 1
 end
@@ -269,7 +275,7 @@ local function totalLoanOwed()
 	for _, ln in ipairs(MG._data.loans or {}) do t += (ln.owed or 0) end
 	return t
 end
-local function advanceDaysIfNeeded()
+function advanceDaysIfNeeded()
 	if not MG._data then return end
 	local start = MG._data.dayStartUnix or os.time()
 	local elapsed = os.time() - start
@@ -281,43 +287,56 @@ local function advanceDaysIfNeeded()
 	MG._data.dayStartUnix = start + daysPassed * DAY_SECONDS
 	-- roll rate + event for the new day
 	MG._data.dayEventDay = -1
-	ensureDayMeta()
-	-- mild late growth on loans
+	if typeof(ensureDayMeta) == "function" then
+		pcall(ensureDayMeta)
+	end
+	-- each loan: +3%/day growth, expire after 5 days from startDay → seize owed
+	local kept = {}
 	for _, loan in ipairs(MG._data.loans or {}) do
 		for _ = 1, daysPassed do
 			loan.owed = math.floor((loan.owed or 0) * 1.03)
 		end
 		loan.lastFeeDay = MG._data.dayNumber
+		local expireDay = (loan.startDay or prevDay) + 5
+		if (MG._data.dayNumber or 1) >= expireDay then
+			local take = math.floor(loan.owed or 0)
+			if take > 0 then
+				local have = MG._data.cookies or 0
+				local paid = math.min(have, take)
+				MG._data.cookies = have - paid
+				pushHistory("loan", "Loan expired −" .. tostring(paid), -paid)
+				if paid < take then
+					-- could not fully pay — wipe flag (harsh default)
+					MG._data._taxWipe = true
+				end
+			end
+			-- loan removed (expired)
+		else
+			table.insert(kept, loan)
+		end
 	end
-	-- tax every 5 days — amount is pure CPS×10 (can be 0 if no CPS)
+	MG._data.loans = kept
+	-- tax every 5 days — TAX ONLY (loans expire on their own). Amount = CPS×10
 	local cycle = math.floor((MG._data.dayNumber - 1) / 5)
 	local paidCycle = math.floor((MG._data.taxDayPaid or 0) / 5)
 	if cycle > paidCycle then
-		if (MG._data.pendingTax or 0) > 0 then
-			MG._data._taxWipe = true
+		local tax = earlyTaxAmount()
+		MG._data.pendingTax = tax
+		if tax <= 0 then
+			MG._data.pendingTax = 0
+			MG._data.taxDayPaid = MG._data.dayNumber
+		elseif (MG._data.cookies or 0) >= tax then
+			MG._data.cookies -= tax
+			MG._data.pendingTax = 0
+			MG._data.taxDayPaid = MG._data.dayNumber
+			MG._data._taxSeized = tax
+			pushHistory("tax", "Tax day " .. tostring(tax), -tax)
 		else
-			local tax = earlyTaxAmount()
-			local loans = totalLoanOwed()
-			MG._data.pendingTax = tax
-			MG._data._taxLoans = loans
-			local need = tax + loans
-			if need <= 0 then
-				MG._data.pendingTax = 0
-				MG._data.taxDayPaid = MG._data.dayNumber
-			elseif (MG._data.cookies or 0) >= need then
-				MG._data.cookies -= need
-				MG._data.loans = {}
-				MG._data.pendingTax = 0
-				MG._data.taxDayPaid = MG._data.dayNumber
-				MG._data._taxSeized = need
-				pushHistory("tax", "Tax day auto-paid", -need)
-			else
-				MG._data._taxWipe = true
-			end
+			MG._data._taxWipe = true
 		end
 	end
 	MG.Save()
-	fireBalance()
+	if typeof(fireBalance) == "function" then pcall(fireBalance) end
 	return true
 end
 function MG.Load()
@@ -383,7 +402,7 @@ function MG.GetBalance()
 	if not MG._data then MG.Load() end
 	return MG._data.cookies
 end
-local function fireBalance()
+function fireBalance()
 	local b = MG.GetBalance()
 	for _, fn in pairs(MG._balListeners) do pcall(fn, b) end
 end
@@ -438,7 +457,7 @@ local function moneyLabel(n)
 	return "$" .. fmt(n)
 end
 local function buildingCost(bdef, owned) return math.ceil(bdef.baseCost * (1.15 ^ owned)) end
-local function getBuildMult(id)
+function getBuildMult(id)
 	local m = 1
 	if not MG._data then return m end
 	for _, u in ipairs(UPGRADES) do
@@ -446,7 +465,7 @@ local function getBuildMult(id)
 	end
 	return m
 end
-local function getCpsMult()
+function getCpsMult()
 	local m = MG._data and MG._data.prestigeMult or 1
 	if not MG._data then return m end
 	for _, u in ipairs(UPGRADES) do
@@ -454,7 +473,7 @@ local function getCpsMult()
 	end
 	return m
 end
-local function getClickMult()
+function getClickMult()
 	local m = 1
 	if not MG._data then return m end
 	for _, u in ipairs(UPGRADES) do
@@ -462,7 +481,7 @@ local function getClickMult()
 	end
 	return m
 end
-local function computeCPS()
+function computeCPS()
 	if not MG._data then MG.Load() end
 	local total = 0
 	for _, b in ipairs(BUILDINGS) do
@@ -473,7 +492,7 @@ local function computeCPS()
 	pcall(function() em = eventEarnMult() end)
 	return base * em
 end
-local function computeClickPower()
+function computeClickPower()
 	if not MG._data then MG.Load() end
 	local base, extra, nonCursor = 1, 0, 0
 	for _, b in ipairs(BUILDINGS) do
@@ -833,7 +852,6 @@ function MG.OpenClicker()
 						TextSize = 14,
 					}):Play()
 					task.wait(0.12)
-					playSfx(SND_CLICK, 0.45)
 					cookieBtn.Size = UDim2.fromOffset(152, 152)
 					cookieBtn.Position = UDim2.new(0.5, -76, 0, 40)
 					TweenService:Create(cookieBtn, TweenInfo.new(0.12, Enum.EasingStyle.Back), {
@@ -989,6 +1007,7 @@ function MG.OpenClicker()
 				if trySpend(c) then
 					pushHistory("buy", "Bought " .. bdef.name, -c)
 					MG._data.buildings[bdef.id] = o + 1; MG.Save(); refreshStore()
+					pcall(refreshUpgrades)
 					if bdef.id == "cursor" then pcall(rebuildOrbitCursors) end
 					cpsLbl.Text = "per second: " .. moneyLabel(computeCPS())
 					clickLbl.Text = "per click: " .. moneyLabel(computeClickPower())
@@ -1208,6 +1227,8 @@ function MG.OpenBank()
 		else
 			for i, ln in ipairs(MG._data.loans) do
 				local held = math.max(0, (MG._data.dayNumber or 1) - (ln.startDay or 1))
+				local exp = ln.expireDay or ((ln.startDay or 1) + 5)
+				local left = math.max(0, exp - (MG._data.dayNumber or 1))
 				local row = Instance.new("Frame")
 				row.BackgroundColor3 = col(th, "Background"); row.Size = UDim2.new(1, -8, 0, 40); row.BorderSizePixel = 0; row.Parent = list; corner(row, 4)
 				label(row, {
@@ -1215,7 +1236,7 @@ function MG.OpenBank()
 					Position = UDim2.new(0, 6, 0, 2), Size = UDim2.new(1, -70, 0, 16), TextSize = 11,
 				})
 				label(row, {
-					Text = "start day " .. tostring(ln.startDay or 1) .. " · grows ~3%/day",
+					Text = "expires in " .. tostring(left) .. "d (day " .. tostring(exp) .. ") · +3%/day",
 					Position = UDim2.new(0, 6, 0, 20), Size = UDim2.new(1, -70, 0, 14), TextSize = 10, TextColor3 = col(th, "SubText"),
 				})
 				button(row, {
@@ -1245,11 +1266,13 @@ function MG.OpenBank()
 		advanceDaysIfNeeded()
 		local rate = currentInterestRate()
 		local owedAdd = math.floor(amt * (1 + rate))
+		local sd = MG._data.dayNumber or 1
 		table.insert(MG._data.loans, {
 			id = (MG._data.loans[#MG._data.loans] and MG._data.loans[#MG._data.loans].id or 0) + 1,
 			amount = amt, owed = owedAdd,
-			startDay = MG._data.dayNumber or 1,
-			lastFeeDay = MG._data.dayNumber or 1,
+			startDay = sd,
+			expireDay = sd + 5,
+			lastFeeDay = sd,
 		})
 		addCookies(amt)
 		playSfx(SND_BUY, 0.4)
@@ -1313,15 +1336,15 @@ function MG.OpenBank()
 		BackgroundColor3 = Color3.fromRGB(160, 100, 60), TextSize = 11,
 	}, function()
 		local tax = earlyTaxAmount()
-		if not trySpend(tax) then status.Text = "Need " .. moneyLabel(tax) return end
+		if tax <= 0 then status.Text = "Tax is $0 (your CPS×10 is 0)" return end
+		if not trySpend(tax) then status.Text = "Need " .. moneyLabel(tax) .. " (CPS×10)" return end
 		MG._data.pendingTax = 0
 		MG._data.taxDayPaid = MG._data.dayNumber or 1
 		pushHistory("tax", "Paid tax early " .. moneyLabel(tax), -tax)
 		MG.Save()
-		playSfx(SND_BUY, 0.4)
-		status.Text = "Paid taxes " .. moneyLabel(tax) .. " — next tax in 5 days"
+		status.Text = "Paid tax " .. moneyLabel(tax) .. " (CPS×10) — next cycle in 5 days"
 		earlyTax.Text = "Pay tax " .. moneyLabel(earlyTaxAmount())
-		fireBalance()
+		if typeof(fireBalance) == "function" then fireBalance() end
 	end)
 
 	-- taller bank window for custom field
