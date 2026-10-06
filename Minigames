@@ -1,5 +1,5 @@
 --[[
-	R8//C00KI3S + Minigames  v2.3
+	R8//C00KI3S + Minigames  v2.4
 	https://raw.githubusercontent.com/x0xtytytytytytx0x/spork/refs/heads/main/Minigames
 	Cookie Clicker core + side minigames, shared wallet.
 	Cookie: rbxassetid://131611164  Clicker: rbxassetid://100640210821551
@@ -16,7 +16,19 @@ local SAVE_PATH = "R8TW0/minigames.json"
 local DISPLAY_ORDER = 2147483646
 local COOKIE_IMG = "rbxassetid://131611164"
 local CLICKER_IMG = "rbxassetid://100640210821551"
-local MG = { Version = "2.3", _windows = {}, _data = nil, _theme = nil, _mainWindow = nil, _suppressed = false, _balListeners = {}, _cpsConn = nil }
+local COOKIE_BG = "rbxassetid://13922994922"
+local SND_BUY = "rbxassetid://289824730"
+local SND_CLICK = "rbxassetid://289824359"
+local SND_WIN = "rbxassetid://85338687410869"
+local SND_LOSE = "rbxassetid://125502625456002"
+local ICO_SOUND_ON = "rbxassetid://16601518608"
+local ICO_SOUND_OFF = "rbxassetid://16601516029"
+local MG = {
+	Version = "2.4",
+	_windows = {}, _data = nil, _theme = nil, _mainWindow = nil,
+	_suppressed = false, _balListeners = {}, _cpsConn = nil,
+	_dayConn = nil, _muted = false, -- cookie-game audio mute
+}
 local FALLBACK = {
 	Background = Color3.fromRGB(18, 20, 28), Sidebar = Color3.fromRGB(28, 32, 44), Panel = Color3.fromRGB(36, 42, 58),
 	PanelLight = Color3.fromRGB(50, 58, 78), AccentRed = Color3.fromRGB(240, 70, 80), AccentBlue = Color3.fromRGB(90, 116, 253),
@@ -49,6 +61,22 @@ function MG.BindMainWindow(window)
 	end)
 end
 local function fsOk() return typeof(writefile) == "function" and typeof(readfile) == "function" end
+local function playSfx(id, vol)
+	if MG._muted then return end
+	if type(id) ~= "string" or id == "" then return end
+	pcall(function()
+		local s = Instance.new("Sound")
+		s.SoundId = id
+		s.Volume = vol or 0.5
+		s.PlayOnRemove = false
+		s.Parent = game:GetService("SoundService")
+		s:Play()
+		s.Ended:Connect(function() s:Destroy() end)
+		task.delay(5, function() if s then s:Destroy() end end)
+	end)
+end
+local function uiClick() playSfx(SND_CLICK, 0.25) end
+
 local function ensureRoot()
 	if not fsOk() then return end
 	pcall(function()
@@ -145,7 +173,10 @@ end
 local function earlyTaxAmount()
 	local cps = 0
 	pcall(function() cps = computeCPS() end)
-	return math.max(1, math.floor(cps * 10))
+	-- always 10× cookies/sec (same as tax day), never a flat $1 unless CPS is tiny
+	local t = math.floor(cps * 10 + 1e-9)
+	if t < 1 then t = 1 end
+	return t
 end
 local function dayPhase01()
 	-- 0..1 within current day
@@ -390,6 +421,7 @@ end
 local function payoutWin(bet)
 	addCookies(bet * 2)
 	pushHistory("game", "Win", bet)
+	playSfx(SND_WIN, 0.55)
 end
 local function payoutPush(bet)
 	addCookies(bet)
@@ -397,24 +429,37 @@ local function payoutPush(bet)
 end
 local function payoutLose(bet)
 	pushHistory("game", "Lose", -bet)
+	playSfx(SND_LOSE, 0.5)
 end
 local function clickerOpen()
 	local w = MG._windows["clicker"]
 	return w and w.gui and w.gui.Parent and w.gui.Enabled
 end
-local function anyCookieUiOpen()
-	-- earnings + day clock only while clicker is open (X stops background)
-	return clickerOpen()
+local function anyMinigameOpen()
+	for _, w in pairs(MG._windows) do
+		if w and w.gui and w.gui.Parent and w.gui.Enabled then return true end
+	end
+	return false
+end
+local function startDayTicker()
+	if MG._dayConn then return end
+	MG._dayConn = RunService.Heartbeat:Connect(function()
+		if not MG._data then return end
+		-- days always advance while any R8 minigame UI is open
+		if anyMinigameOpen() then
+			advanceDaysIfNeeded()
+		end
+	end)
 end
 local function startCPSTicker()
+	startDayTicker()
 	if MG._cpsConn then return end
 	MG._cpsConn = RunService.Heartbeat:Connect(function()
 		if not MG._data then return end
-		if not anyCookieUiOpen() then
+		if not clickerOpen() then
 			MG._data.lastTick = os.clock()
 			return
 		end
-		advanceDaysIfNeeded()
 		local now = os.clock()
 		local dt = now - (MG._data.lastTick or now)
 		if dt < 0 then dt = 0 end
@@ -432,6 +477,21 @@ local function startCPSTicker()
 			if MG._saveAcc >= 5 then MG._saveAcc = 0; MG.Save() end
 		end
 	end)
+end
+local function dayStatusText()
+	if not MG._data then return "—" end
+	advanceDaysIfNeeded()
+	local phase = dayPhase01()
+	local leftSec = math.max(0, math.floor((1 - phase) * DAY_SECONDS))
+	local dtax = daysUntilTax()
+	local cps = 0
+	pcall(function() cps = computeCPS() end)
+	local taxAmt = math.max(1, math.floor(cps * 10))
+	local taxHint = dtax == 0 and ("TAX TODAY " .. moneyLabel(taxAmt)) or ("tax in " .. dtax .. "d = " .. moneyLabel(taxAmt))
+	return string.format("%s Day %d · %dm %ds · %s · loans %s",
+		dayEmoji(), MG._data.dayNumber or 1,
+		math.floor(leftSec / 60), leftSec % 60,
+		taxHint, moneyLabel(totalLoanOwed()))
 end
 local function corner(p, r)
 	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 8); c.Parent = p; return c
@@ -455,7 +515,12 @@ local function button(parent, props, cb)
 	b.TextColor3 = Color3.new(1, 1, 1); b.BackgroundColor3 = col(th, "AccentBlue"); b.BorderSizePixel = 0
 	for k, v in pairs(props or {}) do b[k] = v end
 	corner(b, 6); b.Parent = parent
-	if cb then b.MouseButton1Click:Connect(cb) end
+	if cb then
+		b.MouseButton1Click:Connect(function()
+			uiClick()
+			cb()
+		end)
+	end
 	return b
 end
 local function makeWindow(id, titleText, size)
@@ -585,12 +650,34 @@ function MG.OpenClicker()
 	local cookieCount = label(left, { Text = moneyLabel(MG._data.cookies), Size = UDim2.new(1, 0, 0, 28), Font = Enum.Font.GothamBold, TextSize = 22, TextXAlignment = Enum.TextXAlignment.Center })
 	local cpsLbl = label(left, { Text = "per second: " .. moneyLabel(computeCPS()), Position = UDim2.new(0, 0, 0, 28), Size = UDim2.new(1, 0, 0, 16), TextSize = 12, TextColor3 = col(th, "SubText"), TextXAlignment = Enum.TextXAlignment.Center })
 	local clickLbl = label(left, { Text = "per click: " .. moneyLabel(computeClickPower()), Position = UDim2.new(0, 0, 0, 44), Size = UDim2.new(1, 0, 0, 14), TextSize = 11, TextColor3 = col(th, "SubText"), TextXAlignment = Enum.TextXAlignment.Center })
+	-- cookie-only background
+	local bg = Instance.new("ImageLabel")
+	bg.Name = "CookieBG"; bg.BackgroundTransparency = 1; bg.Image = COOKIE_BG
+	bg.ScaleType = Enum.ScaleType.Crop; bg.ImageTransparency = 0.35
+	bg.Size = UDim2.fromScale(1, 1); bg.ZIndex = 0; bg.Parent = left
+	local bgDim = Instance.new("Frame")
+	bgDim.BackgroundColor3 = Color3.fromRGB(0, 0, 0); bgDim.BackgroundTransparency = 0.45
+	bgDim.BorderSizePixel = 0; bgDim.Size = UDim2.fromScale(1, 1); bgDim.ZIndex = 0; bgDim.Parent = left
+
+	-- mute button (cookie game only)
+	local muteBtn = Instance.new("ImageButton")
+	muteBtn.BackgroundTransparency = 1
+	muteBtn.Image = MG._muted and ICO_SOUND_OFF or ICO_SOUND_ON
+	muteBtn.Size = UDim2.fromOffset(28, 28)
+	muteBtn.Position = UDim2.new(1, -30, 0, 0)
+	muteBtn.ZIndex = 6; muteBtn.Parent = left
+	muteBtn.MouseButton1Click:Connect(function()
+		MG._muted = not MG._muted
+		muteBtn.Image = MG._muted and ICO_SOUND_OFF or ICO_SOUND_ON
+	end)
+
 	local cookieBtn = Instance.new("ImageButton")
 	cookieBtn.Name = "Cookie"; cookieBtn.BackgroundTransparency = 1; cookieBtn.Image = COOKIE_IMG
-	cookieBtn.Size = UDim2.fromOffset(160, 160); cookieBtn.Position = UDim2.new(0.5, -80, 0, 70); cookieBtn.Parent = left
+	cookieBtn.Size = UDim2.fromOffset(160, 160); cookieBtn.Position = UDim2.new(0.5, -80, 0, 70)
+	cookieBtn.ZIndex = 2; cookieBtn.Parent = left
 	local cursorLayer = Instance.new("Frame")
 	cursorLayer.BackgroundTransparency = 1; cursorLayer.Size = UDim2.fromOffset(200, 200)
-	cursorLayer.Position = UDim2.new(0.5, -100, 0, 50); cursorLayer.ZIndex = 2; cursorLayer.Parent = left
+	cursorLayer.Position = UDim2.new(0.5, -100, 0, 50); cursorLayer.ZIndex = 3; cursorLayer.Parent = left
 	local orbitCursors = {}
 	local function rebuildOrbitCursors()
 		for _, c in ipairs(orbitCursors) do c:Destroy() end
@@ -600,7 +687,7 @@ function MG.OpenClicker()
 			local lab = Instance.new("TextLabel")
 			lab.BackgroundTransparency = 1; lab.Text = "👆"; lab.TextSize = 18
 			lab.Size = UDim2.fromOffset(24, 24); lab.AnchorPoint = Vector2.new(0.5, 0.5)
-			lab.ZIndex = 3; lab.Parent = cursorLayer
+			lab.ZIndex = 4; lab.Parent = cursorLayer
 			orbitCursors[i] = lab
 		end
 	end
@@ -610,30 +697,45 @@ function MG.OpenClicker()
 		while left.Parent do
 			local n = #orbitCursors
 			if n > 0 then
-				ang += 0.04
+				ang += 0.05
 				local radius = 78
 				for i, lab in ipairs(orbitCursors) do
 					local a = ang + (i - 1) * (math.pi * 2 / n)
 					lab.Position = UDim2.new(0.5, math.cos(a) * radius, 0.5, math.sin(a) * radius)
+					lab.Rotation = math.deg(a) + 90
 				end
 			end
 			task.wait(0.03)
 		end
 	end)
-	-- cursors "click" the cookie periodically
+	-- cursors dive-click the cookie
 	task.spawn(function()
+		local idx = 1
 		while left.Parent do
-			local n = MG._data.buildings.cursor or 0
+			local n = #orbitCursors
 			if n > 0 then
-				local power = computeClickPower() * 0.1 -- visual only; real CPS handles income
-				-- tiny pulse as if auto-clicked
-				cookieBtn.Size = UDim2.fromOffset(156, 156)
-				cookieBtn.Position = UDim2.new(0.5, -78, 0, 72)
-				TweenService:Create(cookieBtn, TweenInfo.new(0.1), {
-					Size = UDim2.fromOffset(160, 160), Position = UDim2.new(0.5, -80, 0, 70),
-				}):Play()
+				local lab = orbitCursors[((idx - 1) % n) + 1]
+				idx += 1
+				if lab and lab.Parent then
+					local home = lab.Position
+					TweenService:Create(lab, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+						Position = UDim2.new(0.5, 0, 0.5, 0),
+						TextSize = 14,
+					}):Play()
+					task.wait(0.12)
+					playSfx(SND_CLICK, 0.15)
+					cookieBtn.Size = UDim2.fromOffset(152, 152)
+					cookieBtn.Position = UDim2.new(0.5, -76, 0, 74)
+					TweenService:Create(cookieBtn, TweenInfo.new(0.12, Enum.EasingStyle.Back), {
+						Size = UDim2.fromOffset(160, 160), Position = UDim2.new(0.5, -80, 0, 70),
+					}):Play()
+					TweenService:Create(lab, TweenInfo.new(0.18, Enum.EasingStyle.Back), {
+						Position = home, TextSize = 18,
+					}):Play()
+				end
 			end
-			task.wait(math.max(0.15, 1 / math.max(1, (MG._data.buildings.cursor or 0) * 0.1)))
+			local owned = math.max(1, MG._data.buildings.cursor or 0)
+			task.wait(math.clamp(1.2 / owned, 0.12, 0.8))
 		end
 	end)
 	local function floatText(txt, color)
@@ -671,6 +773,7 @@ function MG.OpenClicker()
 	cookieBtn.MouseButton1Click:Connect(function()
 		local power = computeClickPower()
 		addCookies(power, true)
+		playSfx(SND_CLICK, 0.55)
 		pulseCookie()
 		floatText("+" .. moneyLabel(power), Color3.fromRGB(120, 255, 140))
 		cookieCount.Text = moneyLabel(MG._data.cookies)
@@ -759,6 +862,8 @@ function MG.OpenClicker()
 				local o = MG._data.buildings[bdef.id] or 0
 				local c = buildingCost(bdef, o)
 				if trySpend(c) then
+					playSfx(SND_BUY, 0.5)
+					pushHistory("buy", "Bought " .. bdef.name, -c)
 					MG._data.buildings[bdef.id] = o + 1; MG.Save(); refreshStore()
 					if bdef.id == "cursor" then pcall(rebuildOrbitCursors) end
 					cpsLbl.Text = "per second: " .. moneyLabel(computeCPS())
@@ -803,6 +908,7 @@ function MG.OpenClicker()
 				button(row, { Text = "Buy", Size = UDim2.fromOffset(52, 28), Position = UDim2.new(1, -58, 0.5, -14), BackgroundColor3 = col(th, "AccentBlue"), TextSize = 11 }, function()
 					if MG._data.upgrades[uid] then return end
 					if trySpend(cost) then
+						playSfx(SND_BUY, 0.5)
 						MG._data.upgrades[uid] = true
 						pushHistory("upgrade", "Bought " .. udef.name, -cost)
 						MG.Save()
@@ -888,9 +994,10 @@ function MG.OpenClicker()
 	end)
 	-- day / tax strip under cookie count
 	local dayLbl = label(left, {
-		Text = dayEmoji() .. " Day " .. tostring(MG._data.dayNumber or 1),
-		Position = UDim2.new(0, 0, 0, 58), Size = UDim2.new(1, 0, 0, 14),
-		TextSize = 11, TextColor3 = col(th, "SubText"), TextXAlignment = Enum.TextXAlignment.Center,
+		Text = dayStatusText(),
+		Position = UDim2.new(0, 0, 0, 56), Size = UDim2.new(1, -32, 0, 28),
+		TextSize = 10, TextColor3 = col(th, "SubText"), TextXAlignment = Enum.TextXAlignment.Center,
+		TextWrapped = true,
 	})
 	local taxLbl = label(left, {
 		Text = "",
@@ -914,11 +1021,8 @@ function MG.OpenClicker()
 				MG._data._taxSeized = nil
 			end
 			cpsLbl.Text = "per second: " .. moneyLabel(computeCPS())
-			local phase = dayPhase01()
-			local leftSec = math.floor((1 - phase) * DAY_SECONDS)
-			local dtax = daysUntilTax()
-			local taxHint = dtax == 0 and "TAX TODAY" or ("tax in " .. tostring(dtax) .. "d")
-			dayLbl.Text = string.format("%s Day %d · %dm%ds · %s", dayEmoji(), MG._data.dayNumber or 1, math.floor(leftSec / 60), leftSec % 60, taxHint)
+			dayLbl.Text = dayStatusText()
+			taxLbl.Text = ""
 			pcall(refreshRebirthLbl)
 			pcall(refreshHistory)
 			task.wait(0.5)
@@ -927,6 +1031,7 @@ function MG.OpenClicker()
 end
 function MG.OpenBank()
 	if not MG._data then MG.Load() end
+	startDayTicker()
 	advanceDaysIfNeeded()
 	local th = detectTheme()
 	local win = makeWindow("bank", "Bank", Vector2.new(340, 420))
@@ -1050,7 +1155,8 @@ function MG.OpenBank()
 		MG._data.taxDayPaid = MG._data.dayNumber or 1
 		pushHistory("tax", "Paid tax early", -tax)
 		MG.Save()
-		status.Text = "Tax paid early " .. moneyLabel(tax) .. " — next cycle in 5 days"
+		playSfx(SND_BUY, 0.4)
+		status.Text = "Paid taxes " .. moneyLabel(tax) .. " (10× CPS) — next tax in 5 days"
 		fireBalance()
 	end)
 
@@ -1058,12 +1164,10 @@ function MG.OpenBank()
 	task.spawn(function()
 		while MG._windows["bank"] and MG._windows["bank"].gui and MG._windows["bank"].gui.Parent do
 			advanceDaysIfNeeded()
-			local phase = dayPhase01()
-			local leftSec = math.floor((1 - phase) * DAY_SECONDS)
-			local dtax = daysUntilTax()
-			local taxHint = dtax == 0 and "TAX DAY" or ("tax in " .. dtax .. " day" .. (dtax == 1 and "" or "s"))
-			dayLbl.Text = string.format("%s Day %d · %dm %ds left · rate %d%%", dayEmoji(), MG._data.dayNumber or 1, math.floor(leftSec / 60), leftSec % 60, math.floor(currentInterestRate() * 100))
-			taxInfo.Text = taxHint .. " · early tax " .. moneyLabel(earlyTaxAmount()) .. " · loans " .. moneyLabel(totalOwed())
+			dayLbl.Text = dayStatusText()
+			local taxAmt = earlyTaxAmount()
+			taxInfo.Text = string.format("Early tax pay: %s (10× CPS) · rate %d%% · loans %s",
+				moneyLabel(taxAmt), math.floor(currentInterestRate() * 100), moneyLabel(totalOwed()))
 			setBorrowVisible(isDaytime())
 			if not isDaytime() then
 				nightGate.Text = "Night — borrowing closed. You can still pay loans / early tax."
@@ -1173,7 +1277,7 @@ function MG.OpenTicTacToe()
 	local function finish(result)
 		over = true; local bet = bb.getBet()
 		if result == "X" then payoutWin(bet); msg.Text = "Win +" .. moneyLabel(bet) .. "  (2×)"; msg.TextColor3 = Color3.fromRGB(120, 255, 140)
-		elseif result == "O" then msg.Text = "Lose"; msg.TextColor3 = col(th, "AccentRed")
+		elseif result == "O" then payoutLose(bet); msg.Text = "Lose"; msg.TextColor3 = col(th, "AccentRed")
 		else payoutPush(bet); msg.Text = "Draw"; msg.TextColor3 = Color3.fromRGB(220, 210, 120) end
 	end
 	for i = 1, 9 do
@@ -1208,7 +1312,7 @@ function MG.OpenRPS()
 		local winMap = { Rock = "Scissors", Paper = "Rock", Scissors = "Paper" }
 		if choice == ai then payoutPush(bet); msg.Text = "Tie vs " .. ai; msg.TextColor3 = Color3.fromRGB(220, 210, 120)
 		elseif winMap[choice] == ai then payoutWin(bet); msg.Text = choice .. " beats " .. ai .. "  +" .. moneyLabel(bet); msg.TextColor3 = Color3.fromRGB(120, 255, 140)
-		else msg.Text = ai .. " beats " .. choice; msg.TextColor3 = col(th, "AccentRed") end
+		else payoutLose(bet); msg.Text = ai .. " beats " .. choice; msg.TextColor3 = col(th, "AccentRed") end
 	end
 	for i, name in ipairs(opts) do
 		button(body, { Text = name, Size = UDim2.new(0.32, -2, 0, 32), Position = UDim2.new((i - 1) * 0.34, 0, 0, bb.contentY + 50), BackgroundColor3 = col(th, "AccentBlue") }, function() play(name) end)
@@ -1227,7 +1331,7 @@ function MG.OpenCoinFlip()
 		if not trySpend(bet) then msg.Text = "Need cookies." return end
 		local res = (math.random(1, 2) == 1) and "Heads" or "Tails"
 		if res == pick then payoutWin(bet); msg.Text = res .. "! +" .. moneyLabel(bet); msg.TextColor3 = Color3.fromRGB(120, 255, 140)
-		else msg.Text = res .. ". Lose."; msg.TextColor3 = col(th, "AccentRed") end
+		else payoutLose(bet); msg.Text = res .. ". Lose."; msg.TextColor3 = col(th, "AccentRed") end
 	end
 	button(body, { Text = "Heads", Size = UDim2.new(0.48, -3, 0, 36), Position = UDim2.new(0, 0, 0, bb.contentY + 40), BackgroundColor3 = col(th, "AccentBlue") }, function() flip("Heads") end)
 	button(body, { Text = "Tails", Size = UDim2.new(0.48, -3, 0, 36), Position = UDim2.new(0.52, 0, 0, bb.contentY + 40), BackgroundColor3 = col(th, "AccentRed") }, function() flip("Tails") end)
@@ -1251,21 +1355,28 @@ function MG.OpenHigherLower()
 		local ok = (higher and nxt > current) or ((not higher) and nxt < current)
 		cardLbl.Text = "Card: " .. names[nxt] .. "  (was " .. names[current] .. ")"; current = nxt
 		if ok then payoutWin(bet); msg.Text = "Correct! +" .. moneyLabel(bet); msg.TextColor3 = Color3.fromRGB(120, 255, 140)
-		else msg.Text = "Wrong."; msg.TextColor3 = col(th, "AccentRed") end
+		else payoutLose(bet); msg.Text = "Wrong."; msg.TextColor3 = col(th, "AccentRed") end
 	end
 	button(body, { Text = "Higher", Size = UDim2.new(0.48, -3, 0, 32), Position = UDim2.new(0, 0, 0, bb.contentY + 55), BackgroundColor3 = Color3.fromRGB(50, 120, 80) }, function() guess(true) end)
 	button(body, { Text = "Lower", Size = UDim2.new(0.48, -3, 0, 32), Position = UDim2.new(0.52, 0, 0, bb.contentY + 55), BackgroundColor3 = col(th, "AccentRed") }, function() guess(false) end)
 end
 function MG.OpenHub()
 	if not MG._data then MG.Load() end
+	startDayTicker()
 	advanceDaysIfNeeded()
 	local th = detectTheme()
 	local win = makeWindow("hub", "R8//C00KI3S", Vector2.new(280, 380))
 	local body = win.body
 	for _, c in ipairs(body:GetChildren()) do c:Destroy() end
-	local bal = label(body, { Text = "Cash " .. moneyLabel(MG.GetBalance()), Size = UDim2.new(1, 0, 0, 18), Font = Enum.Font.GothamBold, TextSize = 14 })
-	label(body, { Text = moneyLabel(computeCPS()) .. "/s  ·  Rebirth " .. tostring(MG._data.prestige), Position = UDim2.new(0, 0, 0, 18), Size = UDim2.new(1, 0, 0, 14), TextColor3 = col(th, "SubText"), TextSize = 11 })
+	local bal = label(body, { Text = "Cash " .. moneyLabel(MG.GetBalance()), Size = UDim2.new(1, 0, 0, 16), Font = Enum.Font.GothamBold, TextSize = 14 })
+	local hubDay = label(body, { Text = dayStatusText(), Position = UDim2.new(0, 0, 0, 18), Size = UDim2.new(1, 0, 0, 28), TextColor3 = col(th, "SubText"), TextSize = 10, TextWrapped = true })
 	watchBalance("hub", function(b) bal.Text = "Cash " .. moneyLabel(b) end)
+	task.spawn(function()
+		while MG._windows["hub"] and MG._windows["hub"].gui and MG._windows["hub"].gui.Parent do
+			hubDay.Text = dayStatusText()
+			task.wait(0.5)
+		end
+	end)
 	local games = {
 		{ "R8//C00KI3S", Color3.fromRGB(200, 140, 80), MG.OpenClicker },
 		{ "Bank", Color3.fromRGB(50, 120, 80), MG.OpenBank },
@@ -1275,7 +1386,7 @@ function MG.OpenHub()
 		{ "Coin Flip", Color3.fromRGB(160, 130, 60), MG.OpenCoinFlip },
 		{ "Higher/Lower", Color3.fromRGB(90, 110, 150), MG.OpenHigherLower },
 	}
-	local y = 42
+	local y = 52
 	for _, g in ipairs(games) do
 		button(body, { Text = g[1], Size = UDim2.new(1, 0, 0, 28), Position = UDim2.new(0, 0, 0, y), BackgroundColor3 = g[2], TextSize = 12 }, function() g[3]() end)
 		y += 32
