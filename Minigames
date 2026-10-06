@@ -1,5 +1,5 @@
 --[[
-	R8//C00KI3S + Minigames  v2.2
+	R8//C00KI3S + Minigames  v2.3
 	https://raw.githubusercontent.com/x0xtytytytytytx0x/spork/refs/heads/main/Minigames
 	Cookie Clicker core + side minigames, shared wallet.
 	Cookie: rbxassetid://131611164  Clicker: rbxassetid://100640210821551
@@ -16,7 +16,7 @@ local SAVE_PATH = "R8TW0/minigames.json"
 local DISPLAY_ORDER = 2147483646
 local COOKIE_IMG = "rbxassetid://131611164"
 local CLICKER_IMG = "rbxassetid://100640210821551"
-local MG = { Version = "2.2", _windows = {}, _data = nil, _theme = nil, _mainWindow = nil, _suppressed = false, _balListeners = {}, _cpsConn = nil }
+local MG = { Version = "2.3", _windows = {}, _data = nil, _theme = nil, _mainWindow = nil, _suppressed = false, _balListeners = {}, _cpsConn = nil }
 local FALLBACK = {
 	Background = Color3.fromRGB(18, 20, 28), Sidebar = Color3.fromRGB(28, 32, 44), Panel = Color3.fromRGB(36, 42, 58),
 	PanelLight = Color3.fromRGB(50, 58, 78), AccentRed = Color3.fromRGB(240, 70, 80), AccentBlue = Color3.fromRGB(90, 116, 253),
@@ -106,21 +106,46 @@ local BUILDING_COLORS = {
 	lab = Color3.fromRGB(80, 200, 180), portal = Color3.fromRGB(180, 80, 220), time = Color3.fromRGB(100, 200, 255),
 	antimatter = Color3.fromRGB(220, 100, 255), prism = Color3.fromRGB(255, 220, 120), chance = Color3.fromRGB(255, 100, 150),
 }
-local DAY_SECONDS = 300 -- 5 real minutes = 1 game day
+local DAY_SECONDS = 120 -- 2 real minutes = 1 game day (1m day / 1m night)
 local function defaultData()
 	local buildings = {}
 	for _, b in ipairs(BUILDINGS) do buildings[b.id] = 0 end
 	return {
 		cookies = 0, cookiesAllTime = 0, cookiesSession = 0, totalClicks = 0,
 		buildings = buildings, upgrades = {}, prestige = 0, prestigeMult = 1, heavenlyChips = 0,
-		loans = {}, -- optional flavor debt; collected on tax day only
+		loans = {}, -- optional; collected on tax day
 		taxDayPaid = 0,
 		pendingTax = 0,
 		dayNumber = 1,
-		dayStartUnix = os.time(), -- real wall clock so days advance even if UI closed briefly
+		dayStartUnix = os.time(),
+		history = {}, -- { t, kind, text, amount }
 		stats = {},
 		lastSave = os.time(), lastTick = os.clock(),
 	}
+end
+local function pushHistory(kind, text, amount)
+	if not MG._data then return end
+	MG._data.history = MG._data.history or {}
+	table.insert(MG._data.history, 1, {
+		t = os.time(),
+		kind = tostring(kind or "info"),
+		text = tostring(text or ""),
+		amount = tonumber(amount) or 0,
+	})
+	while #MG._data.history > 80 do table.remove(MG._data.history) end
+end
+local function daysUntilTax()
+	if not MG._data then return 5 end
+	local d = MG._data.dayNumber or 1
+	-- tax on days 5,10,15... → days until next multiple of 5
+	local mod = d % 5
+	if mod == 0 then return 0 end
+	return 5 - mod
+end
+local function earlyTaxAmount()
+	local cps = 0
+	pcall(function() cps = computeCPS() end)
+	return math.max(1, math.floor(cps * 10))
 end
 local function dayPhase01()
 	-- 0..1 within current day
@@ -237,6 +262,7 @@ function MG.Load()
 	if d.dayStartUnix < 100000 then d.dayStartUnix = os.time() end -- migrate clock→unix
 	d.taxDayPaid = math.floor(tonumber(d.taxDayPaid) or 0)
 	d.pendingTax = math.max(0, math.floor(tonumber(d.pendingTax) or 0))
+	d.history = type(d.history) == "table" and d.history or {}
 	d.lastTick = os.clock()
 	MG._data = d
 	return d
@@ -361,8 +387,17 @@ local function computeClickPower()
 	end
 	return (base + extra + mouseBonus) * getClickMult() * (MG._data.prestigeMult or 1)
 end
-local function payoutWin(bet) addCookies(bet * 2) end
-local function payoutPush(bet) addCookies(bet) end
+local function payoutWin(bet)
+	addCookies(bet * 2)
+	pushHistory("game", "Win", bet)
+end
+local function payoutPush(bet)
+	addCookies(bet)
+	pushHistory("game", "Push / refund", 0)
+end
+local function payoutLose(bet)
+	pushHistory("game", "Lose", -bet)
+end
 local function clickerOpen()
 	local w = MG._windows["clicker"]
 	return w and w.gui and w.gui.Parent and w.gui.Enabled
@@ -449,6 +484,11 @@ local function makeWindow(id, titleText, size)
 	local accent = Instance.new("Frame")
 	accent.BackgroundColor3 = col(th, "AccentBlue"); accent.BorderSizePixel = 0
 	accent.Position = UDim2.new(0, 0, 1, -2); accent.Size = UDim2.new(1, 0, 0, 2); accent.Parent = top
+	local glow = Instance.new("Frame")
+	glow.BackgroundColor3 = col(th, "AccentBlue"); glow.BackgroundTransparency = 0.85
+	glow.BorderSizePixel = 0; glow.Size = UDim2.new(1, 0, 0, 8)
+	glow.Position = UDim2.new(0, 0, 1, -8); glow.Parent = top
+
 	label(top, { Text = titleText, Position = UDim2.new(0, 10, 0, 0), Size = UDim2.new(1, -80, 1, 0), Font = Enum.Font.GothamBold, TextSize = 13 })
 	local body = Instance.new("Frame")
 	body.Name = "Body"; body.BackgroundTransparency = 1; body.Position = UDim2.new(0, 10, 0, 38)
@@ -657,8 +697,9 @@ function MG.OpenClicker()
 		MG._data.upgrades = {}
 		MG._data.cookies = 0
 		MG._data.cookiesSession = 0
-		MG._data.loans = {}
+		-- loans persist through rebirth
 		MG._data.pendingTax = 0
+		pushHistory("rebirth", "Rebirth #" .. tostring(MG._data.prestige), 0)
 		MG.Save(); fireBalance()
 		cookieCount.Text = "$0"; cpsLbl.Text = "per second: $0"
 		MG.OpenClicker()
@@ -685,8 +726,9 @@ function MG.OpenClicker()
 	local storePage = makePage("store")
 	local upgPage = makePage("upgrades")
 	local statsPage = makePage("stats")
+	local histPage = makePage("history")
 	showPage("store")
-	local tabs = { { "Store", "store" }, { "Upgrades", "upgrades" }, { "Stats", "stats" } }
+	local tabs = { { "Store", "store" }, { "Upgrades", "upgrades" }, { "Stats", "stats" }, { "History", "history" } }
 	for i, t in ipairs(tabs) do
 		button(tabBar, { Text = t[1], Size = UDim2.new(1 / #tabs, -4, 1, 0), Position = UDim2.new((i - 1) / #tabs, 2, 0, 0), BackgroundColor3 = col(th, "PanelLight"), TextColor3 = col(th, "Text"), TextSize = 11 }, function() showPage(t[2]) end)
 	end
@@ -728,45 +770,80 @@ function MG.OpenClicker()
 	end
 	local function refreshUpgrades()
 		for _, ch in ipairs(upgPage:GetChildren()) do
-			if ch:IsA("Frame") or ch:IsA("TextLabel") or ch:IsA("TextButton") then ch:Destroy() end
+			if ch:IsA("Frame") or ch:IsA("TextLabel") or ch:IsA("TextButton") then pcall(function() ch:Destroy() end) end
 		end
 		local shown = 0
 		for _, udef in ipairs(UPGRADES) do
-			local owned = MG._data.upgrades[udef.id] == true
+			local owned = MG._data.upgrades and MG._data.upgrades[udef.id] and true or false
 			local locked = false
-			if not owned and udef.req then
+			local reqTxt = ""
+			if not owned and type(udef.req) == "table" then
 				for bid, need in pairs(udef.req) do
-					if (MG._data.buildings[bid] or 0) < need then locked = true break end
+					reqTxt = reqTxt .. bid .. "×" .. tostring(need) .. " "
+					if (MG._data.buildings[bid] or 0) < need then locked = true end
 				end
 			end
+			local row = Instance.new("Frame")
+			row.BackgroundColor3 = col(th, "Background")
+			row.Size = UDim2.new(1, -8, 0, 48)
+			row.BorderSizePixel = 0
+			row.Parent = upgPage
+			corner(row, 6)
 			if owned then
-				local row = Instance.new("Frame")
-				row.BackgroundColor3 = col(th, "Background"); row.Size = UDim2.new(1, -8, 0, 40); row.BorderSizePixel = 0; row.Parent = upgPage; corner(row, 6)
+				stroke(row, Color3.fromRGB(80, 160, 100), 1)
 				label(row, { Text = "✓ " .. udef.name, Position = UDim2.new(0, 8, 0, 4), Size = UDim2.new(1, -16, 0, 16), TextSize = 12, TextColor3 = Color3.fromRGB(120, 255, 140) })
-				label(row, { Text = udef.desc, Position = UDim2.new(0, 8, 0, 20), Size = UDim2.new(1, -16, 0, 14), TextSize = 10, TextColor3 = col(th, "SubText") })
-				shown += 1
-			elseif not locked then
-				local row = Instance.new("Frame")
-				row.BackgroundColor3 = col(th, "Background"); row.Size = UDim2.new(1, -8, 0, 48); row.BorderSizePixel = 0; row.Parent = upgPage; corner(row, 6)
+				label(row, { Text = udef.desc, Position = UDim2.new(0, 8, 0, 22), Size = UDim2.new(1, -16, 0, 18), TextSize = 10, TextColor3 = col(th, "SubText") })
+			elseif locked then
+				label(row, { Text = "🔒 " .. udef.name, Position = UDim2.new(0, 8, 0, 4), Size = UDim2.new(1, -16, 0, 16), TextSize = 12, TextColor3 = col(th, "SubText") })
+				label(row, { Text = "Need " .. reqTxt, Position = UDim2.new(0, 8, 0, 22), Size = UDim2.new(1, -16, 0, 18), TextSize = 10, TextColor3 = col(th, "SubText") })
+			else
 				label(row, { Text = udef.name, Position = UDim2.new(0, 8, 0, 4), Size = UDim2.new(1, -70, 0, 14), Font = Enum.Font.GothamBold, TextSize = 12 })
 				label(row, { Text = udef.desc .. "  ·  " .. moneyLabel(udef.cost), Position = UDim2.new(0, 8, 0, 20), Size = UDim2.new(1, -70, 0, 22), TextSize = 10, TextWrapped = true, TextColor3 = col(th, "SubText") })
-				local cost = udef.cost
-				local uid = udef.id
+				local cost, uid = udef.cost, udef.id
 				button(row, { Text = "Buy", Size = UDim2.fromOffset(52, 28), Position = UDim2.new(1, -58, 0.5, -14), BackgroundColor3 = col(th, "AccentBlue"), TextSize = 11 }, function()
 					if MG._data.upgrades[uid] then return end
 					if trySpend(cost) then
 						MG._data.upgrades[uid] = true
+						pushHistory("upgrade", "Bought " .. udef.name, -cost)
 						MG.Save()
-						pcall(refreshUpgrades)
+						refreshUpgrades()
 						cpsLbl.Text = "per second: " .. moneyLabel(computeCPS())
 						clickLbl.Text = "per click: " .. moneyLabel(computeClickPower())
+						cookieCount.Text = moneyLabel(MG._data.cookies)
 					end
 				end)
-				shown += 1
 			end
+			shown += 1
 		end
 		if shown == 0 then
-			label(upgPage, { Text = "Buy buildings to unlock upgrades.", Size = UDim2.new(1, -8, 0, 24), TextSize = 12, TextColor3 = col(th, "SubText") })
+			label(upgPage, { Text = "No upgrades defined.", Size = UDim2.new(1, -8, 0, 24), TextSize = 12, TextColor3 = col(th, "SubText") })
+		end
+	end
+	local function refreshHistory()
+		for _, ch in ipairs(histPage:GetChildren()) do
+			if ch:IsA("Frame") or ch:IsA("TextLabel") then pcall(function() ch:Destroy() end) end
+		end
+		local list = MG._data.history or {}
+		if #list == 0 then
+			label(histPage, { Text = "No history yet — play minigames or take loans.", Size = UDim2.new(1, -8, 0, 28), TextSize = 11, TextColor3 = col(th, "SubText") })
+			return
+		end
+		for i, e in ipairs(list) do
+			if i > 40 then break end
+			local amt = tonumber(e.amount) or 0
+			local colr = amt > 0 and Color3.fromRGB(120, 255, 140) or (amt < 0 and col(th, "AccentRed") or col(th, "SubText"))
+			local row = Instance.new("Frame")
+			row.BackgroundColor3 = col(th, "Background"); row.Size = UDim2.new(1, -8, 0, 28); row.BorderSizePixel = 0; row.Parent = histPage; corner(row, 4)
+			label(row, {
+				Text = tostring(e.text or e.kind or "?"),
+				Position = UDim2.new(0, 8, 0, 0), Size = UDim2.new(0.7, -8, 1, 0),
+				TextSize = 11, TextTruncate = Enum.TextTruncate.AtEnd,
+			})
+			label(row, {
+				Text = (amt > 0 and "+" or "") .. (amt ~= 0 and moneyLabel(amt) or ""),
+				Position = UDim2.new(0.7, 0, 0, 0), Size = UDim2.new(0.3, -8, 1, 0),
+				TextSize = 11, TextColor3 = colr, TextXAlignment = Enum.TextXAlignment.Right,
+			})
 		end
 	end
 	local function refreshStats()
@@ -799,7 +876,7 @@ function MG.OpenClicker()
 			MG.ResetData()
 			cookieCount.Text = "0"; cpsLbl.Text = "per second: 0"; clickLbl.Text = "per click: 1"
 			prestigeLbl.Text = "Rebirths: 0  (x1.0)"
-			refreshStore(); refreshUpgrades(); refreshStats()
+			refreshStore(); refreshUpgrades(); refreshStats(); refreshHistory()
 		end)
 	end
 	refreshStore(); refreshUpgrades(); refreshStats()
@@ -839,8 +916,11 @@ function MG.OpenClicker()
 			cpsLbl.Text = "per second: " .. moneyLabel(computeCPS())
 			local phase = dayPhase01()
 			local leftSec = math.floor((1 - phase) * DAY_SECONDS)
-			dayLbl.Text = string.format("%s Day %d  (%dm %ds)", dayEmoji(), MG._data.dayNumber or 1, math.floor(leftSec / 60), leftSec % 60)
+			local dtax = daysUntilTax()
+			local taxHint = dtax == 0 and "TAX TODAY" or ("tax in " .. tostring(dtax) .. "d")
+			dayLbl.Text = string.format("%s Day %d · %dm%ds · %s", dayEmoji(), MG._data.dayNumber or 1, math.floor(leftSec / 60), leftSec % 60, taxHint)
 			pcall(refreshRebirthLbl)
+			pcall(refreshHistory)
 			task.wait(0.5)
 		end
 	end)
@@ -849,34 +929,34 @@ function MG.OpenBank()
 	if not MG._data then MG.Load() end
 	advanceDaysIfNeeded()
 	local th = detectTheme()
-	local win = makeWindow("bank", "Bank", Vector2.new(320, 380))
+	local win = makeWindow("bank", "Bank", Vector2.new(340, 420))
 	local body = win.body
 	for _, c in ipairs(body:GetChildren()) do c:Destroy() end
+
 	local balLbl = label(body, { Text = "Cash " .. moneyLabel(MG._data.cookies), Size = UDim2.new(1, 0, 0, 16), Font = Enum.Font.GothamBold })
 	local dayLbl = label(body, {
-		Text = dayEmoji() .. " Day " .. tostring(MG._data.dayNumber),
-		Position = UDim2.new(0, 0, 0, 18), Size = UDim2.new(1, 0, 0, 14), TextSize = 11, TextColor3 = col(th, "SubText"),
+		Text = "", Position = UDim2.new(0, 0, 0, 18), Size = UDim2.new(1, 0, 0, 14), TextSize = 11, TextColor3 = col(th, "SubText"),
 	})
-	local status = label(body, { Text = "", Position = UDim2.new(0, 0, 0, 34), Size = UDim2.new(1, 0, 0, 14), TextSize = 11, TextColor3 = col(th, "SubText") })
+	local taxInfo = label(body, {
+		Text = "", Position = UDim2.new(0, 0, 0, 34), Size = UDim2.new(1, 0, 0, 14), TextSize = 11, TextColor3 = col(th, "AccentRed"),
+	})
+	local status = label(body, { Text = "", Position = UDim2.new(0, 0, 0, 50), Size = UDim2.new(1, 0, 0, 14), TextSize = 11, TextColor3 = col(th, "SubText") })
 	watchBalance("bank", function(b) balLbl.Text = "Cash " .. moneyLabel(b) end)
-
-	if not isDaytime() then
-		dayLbl.Text = "🌙 Night — bank closed (come back in daytime)"
-		label(body, {
-			Text = "Loans are optional cash. On tax day (every 5 days)\nany open loans + tax are taken from your cash.\nIf you can't cover it, you lose everything.",
-			Position = UDim2.new(0, 0, 0, 60), Size = UDim2.new(1, 0, 0, 80),
-			TextSize = 12, TextColor3 = col(th, "SubText"), TextWrapped = true,
-		})
-		return
-	end
 
 	local list = Instance.new("ScrollingFrame")
 	list.BackgroundColor3 = col(th, "Panel"); list.BorderSizePixel = 0
-	list.Position = UDim2.new(0, 0, 0, 52); list.Size = UDim2.new(1, 0, 0, 140)
+	list.Position = UDim2.new(0, 0, 0, 70); list.Size = UDim2.new(1, 0, 0, 120)
 	list.ScrollBarThickness = 4; list.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	list.CanvasSize = UDim2.new(0, 0, 0, 0); list.Parent = body; corner(list, 6)
+	stroke(list, col(th, "Stroke"), 1)
 	local lay = Instance.new("UIListLayout"); lay.Padding = UDim.new(0, 4); lay.Parent = list
 	local pad = Instance.new("UIPadding"); pad.PaddingTop = UDim.new(0, 4); pad.PaddingLeft = UDim.new(0, 4); pad.PaddingRight = UDim.new(0, 4); pad.Parent = list
+
+	local borrowBtns = {}
+	local nightGate = label(body, {
+		Text = "", Position = UDim2.new(0, 0, 0, 200), Size = UDim2.new(1, 0, 0, 40),
+		TextSize = 12, TextColor3 = col(th, "SubText"), TextWrapped = true, Visible = false,
+	})
 
 	local function totalOwed()
 		local t = 0
@@ -889,19 +969,19 @@ function MG.OpenBank()
 			if not ch:IsA("UIListLayout") and not ch:IsA("UIPadding") then ch:Destroy() end
 		end
 		if #(MG._data.loans or {}) == 0 then
-			label(list, { Text = "No loans. (optional — collected on tax day)", Size = UDim2.new(1, -8, 0, 20), TextSize = 11, TextColor3 = col(th, "SubText") })
+			label(list, { Text = "No loans — optional cash, due on tax day.", Size = UDim2.new(1, -8, 0, 20), TextSize = 11, TextColor3 = col(th, "SubText") })
 		else
 			for i, ln in ipairs(MG._data.loans) do
 				local held = math.max(0, (MG._data.dayNumber or 1) - (ln.startDay or 1))
 				local row = Instance.new("Frame")
 				row.BackgroundColor3 = col(th, "Background"); row.Size = UDim2.new(1, -8, 0, 40); row.BorderSizePixel = 0; row.Parent = list; corner(row, 4)
 				label(row, {
-					Text = "Loan #" .. tostring(i) .. "  owed " .. moneyLabel(ln.owed) .. "  ·  " .. tostring(held) .. "d held",
+					Text = string.format("Loan #%d  owed %s  ·  %dd held", i, moneyLabel(ln.owed), held),
 					Position = UDim2.new(0, 6, 0, 2), Size = UDim2.new(1, -70, 0, 16), TextSize = 11,
 				})
 				label(row, {
-					Text = "late fee auto · start day " .. tostring(ln.startDay or 1),
-					Position = UDim2.new(0, 6, 0, 20), Size = UDim2.new(1, -70, 0, 14), TextSize = 10, TextColor3 = col(th, "AccentRed"),
+					Text = "start day " .. tostring(ln.startDay or 1) .. " · grows ~3%/day",
+					Position = UDim2.new(0, 6, 0, 20), Size = UDim2.new(1, -70, 0, 14), TextSize = 10, TextColor3 = col(th, "SubText"),
 				})
 				button(row, {
 					Text = "Pay", Size = UDim2.fromOffset(48, 26), Position = UDim2.new(1, -54, 0.5, -13),
@@ -910,21 +990,27 @@ function MG.OpenBank()
 					local pay = ln.owed or 0
 					if pay <= 0 then return end
 					if not trySpend(pay) then status.Text = "Need " .. moneyLabel(pay) return end
+					pushHistory("loan", "Paid loan #" .. tostring(i), -pay)
 					table.remove(MG._data.loans, i)
-					MG.Save(); status.Text = "Paid loan #" .. tostring(i); refreshLoans()
+					MG.Save(); status.Text = "Paid loan"; refreshLoans()
 				end)
 			end
 		end
-		dayLbl.Text = dayEmoji() .. " Day " .. tostring(MG._data.dayNumber) .. "  ·  rate " .. tostring(math.floor(currentInterestRate() * 100)) .. "%  ·  owed " .. moneyLabel(totalOwed())
+	end
+
+	local function setBorrowVisible(on)
+		for _, b in ipairs(borrowBtns) do b.Visible = on end
+		nightGate.Visible = not on
 	end
 
 	local amounts = { 100, 250, 500, 1000 }
 	for i, amt in ipairs(amounts) do
-		button(body, {
+		local b = button(body, {
 			Text = "Borrow " .. moneyLabel(amt), Size = UDim2.new(0.48, -3, 0, 28),
 			Position = UDim2.new((i % 2 == 1) and 0 or 0.52, 0, 0, 200 + math.floor((i - 1) / 2) * 34),
 			BackgroundColor3 = Color3.fromRGB(50, 120, 80), TextSize = 11,
 		}, function()
+			if not isDaytime() then status.Text = "Bank closed at night." return end
 			advanceDaysIfNeeded()
 			local rate = currentInterestRate()
 			local owedAdd = math.floor(amt * (1 + rate))
@@ -935,29 +1021,64 @@ function MG.OpenBank()
 				lastFeeDay = MG._data.dayNumber or 1,
 			})
 			addCookies(amt)
-			status.Text = "Borrowed " .. moneyLabel(amt) .. " · due on tax day: " .. moneyLabel(owedAdd)
+			pushHistory("loan", "Borrowed " .. moneyLabel(amt), amt)
+			status.Text = "Borrowed " .. moneyLabel(amt) .. " · tax-day due " .. moneyLabel(owedAdd)
 			MG.Save(); refreshLoans()
 		end)
+		table.insert(borrowBtns, b)
 	end
-	button(body, {
-		Text = "Pay ALL loans", Size = UDim2.new(1, 0, 0, 28), Position = UDim2.new(0, 0, 0, 274),
+
+	local payAll = button(body, {
+		Text = "Pay ALL loans", Size = UDim2.new(0.48, -3, 0, 28), Position = UDim2.new(0, 0, 0, 274),
 		BackgroundColor3 = col(th, "AccentBlue"), TextSize = 11,
 	}, function()
 		local pay = totalOwed()
 		if pay <= 0 then status.Text = "Nothing owed." return end
 		if not trySpend(pay) then status.Text = "Need " .. moneyLabel(pay) return end
+		pushHistory("loan", "Paid all loans", -pay)
 		MG._data.loans = {}; MG.Save(); status.Text = "All cleared!"; refreshLoans()
 	end)
-	button(body, {
-		Text = "Force late fee (1 day)", Size = UDim2.new(1, 0, 0, 24), Position = UDim2.new(0, 0, 0, 310),
-		BackgroundColor3 = col(th, "AccentRed"), TextSize = 11,
+	table.insert(borrowBtns, payAll)
+
+	local earlyTax = button(body, {
+		Text = "Pay tax early", Size = UDim2.new(0.48, -3, 0, 28), Position = UDim2.new(0.52, 0, 0, 274),
+		BackgroundColor3 = Color3.fromRGB(160, 100, 60), TextSize = 11,
 	}, function()
-		for _, ln in ipairs(MG._data.loans or {}) do
-			ln.owed = math.floor((ln.owed or 0) * 1.08)
-			ln.lastFeeDay = MG._data.dayNumber
-		end
-		MG.Save(); status.Text = "Late fees applied."; refreshLoans()
+		local tax = earlyTaxAmount()
+		if not trySpend(tax) then status.Text = "Need " .. moneyLabel(tax) .. " (10× CPS)" return end
+		MG._data.pendingTax = 0
+		MG._data.taxDayPaid = MG._data.dayNumber or 1
+		pushHistory("tax", "Paid tax early", -tax)
+		MG.Save()
+		status.Text = "Tax paid early " .. moneyLabel(tax) .. " — next cycle in 5 days"
+		fireBalance()
 	end)
+
+	-- live header + loans (no close/reopen needed)
+	task.spawn(function()
+		while MG._windows["bank"] and MG._windows["bank"].gui and MG._windows["bank"].gui.Parent do
+			advanceDaysIfNeeded()
+			local phase = dayPhase01()
+			local leftSec = math.floor((1 - phase) * DAY_SECONDS)
+			local dtax = daysUntilTax()
+			local taxHint = dtax == 0 and "TAX DAY" or ("tax in " .. dtax .. " day" .. (dtax == 1 and "" or "s"))
+			dayLbl.Text = string.format("%s Day %d · %dm %ds left · rate %d%%", dayEmoji(), MG._data.dayNumber or 1, math.floor(leftSec / 60), leftSec % 60, math.floor(currentInterestRate() * 100))
+			taxInfo.Text = taxHint .. " · early tax " .. moneyLabel(earlyTaxAmount()) .. " · loans " .. moneyLabel(totalOwed())
+			setBorrowVisible(isDaytime())
+			if not isDaytime() then
+				nightGate.Text = "Night — borrowing closed. You can still pay loans / early tax."
+			end
+			refreshLoans()
+			if MG._data._taxWipe then
+				status.Text = "TAX/LOANS UNPAID — wipe incoming"
+			elseif MG._data._taxSeized then
+				status.Text = "Tax day seized " .. moneyLabel(MG._data._taxSeized)
+				MG._data._taxSeized = nil
+			end
+			task.wait(0.5)
+		end
+	end)
+
 	refreshLoans()
 end
 
@@ -996,7 +1117,7 @@ function MG.OpenBlackjack()
 		if result == "win" then payoutWin(bet); msg.Text = "Win +" .. moneyLabel(bet) .. "  (2× stake)"
 		elseif result == "blackjack" then local pay = math.floor(bet * 2.5); addCookies(pay); msg.Text = "Blackjack +" .. moneyLabel(pay)
 		elseif result == "push" then payoutPush(bet); msg.Text = "Push"
-		else msg.Text = "Lose" end
+		else payoutLose(bet); msg.Text = "Lose" end
 		msg.TextColor3 = (result == "lose") and col(th, "AccentRed") or Color3.fromRGB(120, 255, 140)
 	end
 	local y = bb.contentY + 74
