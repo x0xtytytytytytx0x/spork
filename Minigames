@@ -1146,7 +1146,7 @@ function MG.OpenClicker()
 			label(row, { Text = line, Position = UDim2.new(0, 8, 0, 0), Size = UDim2.new(1, -12, 1, 0), TextSize = 11 })
 		end
 		button(statsPage, {
-			Text = "Secret button (skip day + collect remaining CPS)",
+			Text = "Secret button",
 			Size = UDim2.new(1, -8, 0, 32), BackgroundColor3 = Color3.fromRGB(120, 90, 180), TextSize = 11,
 		}, function()
 			-- pay out remaining time in this day as CPS, then force day advance (taxes/loans still run)
