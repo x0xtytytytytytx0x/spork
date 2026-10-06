@@ -526,13 +526,13 @@ local function payoutPush(bet)
 end
 local LOSE_MSGS = {
 	"House always wins.",
-	"Oof. Cookies gone.",
+	"Fuck you.",
 	"Not this time.",
 	"Tough break.",
-	"RNG said no.",
+	"Tough shit.",
 	"Better luck next round.",
 	"That's a miss.",
-	"Cookies evaporated.",
+	"bye bye.",
 }
 local function loseMsg()
 	return LOSE_MSGS[math.random(1, #LOSE_MSGS)]
