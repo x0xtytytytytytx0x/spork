@@ -1,5 +1,5 @@
 --[[
-	R8//C00KI3S + Minigames  v2.4
+	R8//C00KI3S + Minigames  v2.5
 	https://raw.githubusercontent.com/x0xtytytytytytx0x/spork/refs/heads/main/Minigames
 	Cookie Clicker core + side minigames, shared wallet.
 	Cookie: rbxassetid://131611164  Clicker: rbxassetid://100640210821551
@@ -24,7 +24,7 @@ local SND_LOSE = "rbxassetid://125502625456002"
 local ICO_SOUND_ON = "rbxassetid://16601518608"
 local ICO_SOUND_OFF = "rbxassetid://16601516029"
 local MG = {
-	Version = "2.4",
+	Version = "2.5",
 	_windows = {}, _data = nil, _theme = nil, _mainWindow = nil,
 	_suppressed = false, _balListeners = {}, _cpsConn = nil,
 	_dayConn = nil, _muted = false, -- cookie-game audio mute
@@ -123,7 +123,7 @@ local UPGRADES = {
 	{ id = "butter", name = "Butter cookies", cost = 999999999, req = {}, cpsMult = 1.15, desc = "Cookie production +15%" },
 }
 local BUILDING_ICONS = {
-	cursor = "👆", grandma = "rbxassetid://137952597072084", farm = "🌾", mine = "⛏️",
+	cursor = "🖕", grandma = "rbxassetid://137952597072084", farm = "🌾", mine = "⛏️",
 	factory = "🏭", bank = "🏦", temple = "🛕", wizard = "🧙", shipment = "🚀",
 	lab = "🧪", portal = "🌀", time = "⏳", antimatter = "⚛️", prism = "💎", chance = "🎲",
 }
@@ -486,9 +486,14 @@ local function dayStatusText()
 	local dtax = daysUntilTax()
 	local cps = 0
 	pcall(function() cps = computeCPS() end)
-	local taxAmt = math.max(1, math.floor(cps * 10))
-	local taxHint = dtax == 0 and ("TAX TODAY " .. moneyLabel(taxAmt)) or ("tax in " .. dtax .. "d = " .. moneyLabel(taxAmt))
-	return string.format("%s Day %d · %dm %ds · %s · loans %s",
+	local taxAmt = math.max(1, math.floor(cps * 10 + 1e-9))
+	local taxHint
+	if dtax == 0 then
+		taxHint = "TAX TODAY " .. moneyLabel(taxAmt)
+	else
+		taxHint = "tax in " .. dtax .. "d → " .. moneyLabel(taxAmt)
+	end
+	return string.format("%s Day %d · %dm%ds · %s · loans %s",
 		dayEmoji(), MG._data.dayNumber or 1,
 		math.floor(leftSec / 60), leftSec % 60,
 		taxHint, moneyLabel(totalLoanOwed()))
@@ -647,17 +652,33 @@ function MG.OpenClicker()
 	for _, c in ipairs(body:GetChildren()) do c:Destroy() end
 	local left = Instance.new("Frame")
 	left.BackgroundTransparency = 1; left.Size = UDim2.new(0.42, -6, 1, 0); left.Parent = body
-	local cookieCount = label(left, { Text = moneyLabel(MG._data.cookies), Size = UDim2.new(1, 0, 0, 28), Font = Enum.Font.GothamBold, TextSize = 22, TextXAlignment = Enum.TextXAlignment.Center })
-	local cpsLbl = label(left, { Text = "per second: " .. moneyLabel(computeCPS()), Position = UDim2.new(0, 0, 0, 28), Size = UDim2.new(1, 0, 0, 16), TextSize = 12, TextColor3 = col(th, "SubText"), TextXAlignment = Enum.TextXAlignment.Center })
-	local clickLbl = label(left, { Text = "per click: " .. moneyLabel(computeClickPower()), Position = UDim2.new(0, 0, 0, 44), Size = UDim2.new(1, 0, 0, 14), TextSize = 11, TextColor3 = col(th, "SubText"), TextXAlignment = Enum.TextXAlignment.Center })
-	-- cookie-only background
+	local cookieCount = label(left, {
+		Text = moneyLabel(MG._data.cookies), Size = UDim2.new(1, -36, 0, 28),
+		Font = Enum.Font.GothamBold, TextSize = 22, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 5,
+	})
+	-- cookie-only background (slow drift)
 	local bg = Instance.new("ImageLabel")
 	bg.Name = "CookieBG"; bg.BackgroundTransparency = 1; bg.Image = COOKIE_BG
 	bg.ScaleType = Enum.ScaleType.Crop; bg.ImageTransparency = 0.35
-	bg.Size = UDim2.fromScale(1, 1); bg.ZIndex = 0; bg.Parent = left
+	bg.AnchorPoint = Vector2.new(0.5, 0.5)
+	bg.Position = UDim2.new(0.5, 0, 0.5, 0)
+	bg.Size = UDim2.new(1.12, 0, 1.12, 0)
+	bg.ZIndex = 0; bg.Parent = left
 	local bgDim = Instance.new("Frame")
 	bgDim.BackgroundColor3 = Color3.fromRGB(0, 0, 0); bgDim.BackgroundTransparency = 0.45
 	bgDim.BorderSizePixel = 0; bgDim.Size = UDim2.fromScale(1, 1); bgDim.ZIndex = 0; bgDim.Parent = left
+	task.spawn(function()
+		local t = 0
+		while bg.Parent do
+			t += 0.016
+			local ox = math.sin(t * 0.15) * 10
+			local oy = math.cos(t * 0.11) * 8
+			local sc = 1.1 + math.sin(t * 0.08) * 0.03
+			bg.Position = UDim2.new(0.5, ox, 0.5, oy)
+			bg.Size = UDim2.new(sc, 0, sc, 0)
+			task.wait(0.03)
+		end
+	end)
 
 	-- mute button (cookie game only)
 	local muteBtn = Instance.new("ImageButton")
@@ -673,11 +694,22 @@ function MG.OpenClicker()
 
 	local cookieBtn = Instance.new("ImageButton")
 	cookieBtn.Name = "Cookie"; cookieBtn.BackgroundTransparency = 1; cookieBtn.Image = COOKIE_IMG
-	cookieBtn.Size = UDim2.fromOffset(160, 160); cookieBtn.Position = UDim2.new(0.5, -80, 0, 70)
+	cookieBtn.Size = UDim2.fromOffset(160, 160); cookieBtn.Position = UDim2.new(0.5, -80, 0, 36)
 	cookieBtn.ZIndex = 2; cookieBtn.Parent = left
 	local cursorLayer = Instance.new("Frame")
 	cursorLayer.BackgroundTransparency = 1; cursorLayer.Size = UDim2.fromOffset(200, 200)
-	cursorLayer.Position = UDim2.new(0.5, -100, 0, 50); cursorLayer.ZIndex = 3; cursorLayer.Parent = left
+	cursorLayer.Position = UDim2.new(0.5, -100, 0, 16); cursorLayer.ZIndex = 3; cursorLayer.Parent = left
+	-- stats BELOW the cookie (not under money)
+	local cpsLbl = label(left, {
+		Text = "per second: " .. moneyLabel(computeCPS()),
+		Position = UDim2.new(0, 0, 0, 206), Size = UDim2.new(1, 0, 0, 14),
+		TextSize = 12, TextColor3 = col(th, "SubText"), TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 5,
+	})
+	local clickLbl = label(left, {
+		Text = "per click: " .. moneyLabel(computeClickPower()),
+		Position = UDim2.new(0, 0, 0, 220), Size = UDim2.new(1, 0, 0, 14),
+		TextSize = 11, TextColor3 = col(th, "SubText"), TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 5,
+	})
 	local orbitCursors = {}
 	local function rebuildOrbitCursors()
 		for _, c in ipairs(orbitCursors) do c:Destroy() end
@@ -685,7 +717,7 @@ function MG.OpenClicker()
 		local n = math.min(24, MG._data.buildings.cursor or 0)
 		for i = 1, n do
 			local lab = Instance.new("TextLabel")
-			lab.BackgroundTransparency = 1; lab.Text = "👆"; lab.TextSize = 18
+			lab.BackgroundTransparency = 1; lab.Text = "🖕"; lab.TextSize = 18
 			lab.Size = UDim2.fromOffset(24, 24); lab.AnchorPoint = Vector2.new(0.5, 0.5)
 			lab.ZIndex = 4; lab.Parent = cursorLayer
 			orbitCursors[i] = lab
@@ -701,14 +733,15 @@ function MG.OpenClicker()
 				local radius = 78
 				for i, lab in ipairs(orbitCursors) do
 					local a = ang + (i - 1) * (math.pi * 2 / n)
+					-- tip points IN toward cookie (emoji points up by default)
 					lab.Position = UDim2.new(0.5, math.cos(a) * radius, 0.5, math.sin(a) * radius)
-					lab.Rotation = math.deg(a) + 90
+					lab.Rotation = math.deg(a) + 270
 				end
 			end
 			task.wait(0.03)
 		end
 	end)
-	-- cursors dive-click the cookie
+	-- cursors dive-click the cookie (with click SFX)
 	task.spawn(function()
 		local idx = 1
 		while left.Parent do
@@ -723,11 +756,11 @@ function MG.OpenClicker()
 						TextSize = 14,
 					}):Play()
 					task.wait(0.12)
-					playSfx(SND_CLICK, 0.15)
+					playSfx(SND_CLICK, 0.45)
 					cookieBtn.Size = UDim2.fromOffset(152, 152)
-					cookieBtn.Position = UDim2.new(0.5, -76, 0, 74)
+					cookieBtn.Position = UDim2.new(0.5, -76, 0, 40)
 					TweenService:Create(cookieBtn, TweenInfo.new(0.12, Enum.EasingStyle.Back), {
-						Size = UDim2.fromOffset(160, 160), Position = UDim2.new(0.5, -80, 0, 70),
+						Size = UDim2.fromOffset(160, 160), Position = UDim2.new(0.5, -80, 0, 36),
 					}):Play()
 					TweenService:Create(lab, TweenInfo.new(0.18, Enum.EasingStyle.Back), {
 						Position = home, TextSize = 18,
@@ -743,7 +776,7 @@ function MG.OpenClicker()
 		f.BackgroundTransparency = 1; f.Text = txt; f.Font = Enum.Font.GothamBold
 		f.TextSize = 16; f.TextColor3 = color or Color3.fromRGB(120, 255, 140)
 		f.Size = UDim2.fromOffset(120, 24); f.AnchorPoint = Vector2.new(0.5, 0.5)
-		f.Position = UDim2.new(0.5, math.random(-30, 30), 0, 140)
+		f.Position = UDim2.new(0.5, math.random(-30, 30), 0, 110)
 		f.ZIndex = 5; f.Parent = left
 		TweenService:Create(f, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Position = f.Position - UDim2.fromOffset(0, 50),
@@ -754,7 +787,7 @@ function MG.OpenClicker()
 	local function pulseCookie()
 		cookieBtn.Size = UDim2.fromOffset(145, 145); cookieBtn.Position = UDim2.new(0.5, -72, 0, 78)
 		TweenService:Create(cookieBtn, TweenInfo.new(0.15, Enum.EasingStyle.Back), {
-			Size = UDim2.fromOffset(160, 160), Position = UDim2.new(0.5, -80, 0, 70),
+			Size = UDim2.fromOffset(160, 160), Position = UDim2.new(0.5, -80, 0, 36),
 		}):Play()
 		-- crumb particles
 		for i = 1, 5 do
@@ -902,8 +935,10 @@ function MG.OpenClicker()
 				label(row, { Text = "🔒 " .. udef.name, Position = UDim2.new(0, 8, 0, 4), Size = UDim2.new(1, -16, 0, 16), TextSize = 12, TextColor3 = col(th, "SubText") })
 				label(row, { Text = "Need " .. reqTxt, Position = UDim2.new(0, 8, 0, 22), Size = UDim2.new(1, -16, 0, 18), TextSize = 10, TextColor3 = col(th, "SubText") })
 			else
-				label(row, { Text = udef.name, Position = UDim2.new(0, 8, 0, 4), Size = UDim2.new(1, -70, 0, 14), Font = Enum.Font.GothamBold, TextSize = 12 })
-				label(row, { Text = udef.desc .. "  ·  " .. moneyLabel(udef.cost), Position = UDim2.new(0, 8, 0, 20), Size = UDim2.new(1, -70, 0, 22), TextSize = 10, TextWrapped = true, TextColor3 = col(th, "SubText") })
+				row.Size = UDim2.new(1, -8, 0, 56)
+				label(row, { Text = udef.name, Position = UDim2.new(0, 8, 0, 2), Size = UDim2.new(1, -70, 0, 14), Font = Enum.Font.GothamBold, TextSize = 12 })
+				label(row, { Text = udef.desc, Position = UDim2.new(0, 8, 0, 18), Size = UDim2.new(1, -70, 0, 14), TextSize = 10, TextTruncate = Enum.TextTruncate.AtEnd, TextColor3 = col(th, "SubText") })
+				label(row, { Text = moneyLabel(udef.cost), Position = UDim2.new(0, 8, 0, 34), Size = UDim2.new(1, -70, 0, 16), TextSize = 12, Font = Enum.Font.GothamBold, TextColor3 = (MG._data.cookies >= udef.cost) and Color3.fromRGB(120, 255, 140) or col(th, "AccentRed") })
 				local cost, uid = udef.cost, udef.id
 				button(row, { Text = "Buy", Size = UDim2.fromOffset(52, 28), Position = UDim2.new(1, -58, 0.5, -14), BackgroundColor3 = col(th, "AccentBlue"), TextSize = 11 }, function()
 					if MG._data.upgrades[uid] then return end
@@ -995,9 +1030,9 @@ function MG.OpenClicker()
 	-- day / tax strip under cookie count
 	local dayLbl = label(left, {
 		Text = dayStatusText(),
-		Position = UDim2.new(0, 0, 0, 56), Size = UDim2.new(1, -32, 0, 28),
+		Position = UDim2.new(0, 4, 0, 236), Size = UDim2.new(1, -8, 0, 36),
 		TextSize = 10, TextColor3 = col(th, "SubText"), TextXAlignment = Enum.TextXAlignment.Center,
-		TextWrapped = true,
+		TextWrapped = true, ZIndex = 5,
 	})
 	local taxLbl = label(left, {
 		Text = "",
@@ -1108,33 +1143,66 @@ function MG.OpenBank()
 		nightGate.Visible = not on
 	end
 
+	local function doBorrow(amt)
+		amt = math.floor(tonumber(amt) or 0)
+		if amt < 1 then status.Text = "Enter a valid amount." return end
+		if not isDaytime() then status.Text = "Bank closed at night." return end
+		advanceDaysIfNeeded()
+		local rate = currentInterestRate()
+		local owedAdd = math.floor(amt * (1 + rate))
+		table.insert(MG._data.loans, {
+			id = (MG._data.loans[#MG._data.loans] and MG._data.loans[#MG._data.loans].id or 0) + 1,
+			amount = amt, owed = owedAdd,
+			startDay = MG._data.dayNumber or 1,
+			lastFeeDay = MG._data.dayNumber or 1,
+		})
+		addCookies(amt)
+		playSfx(SND_BUY, 0.4)
+		pushHistory("loan", "Borrowed " .. moneyLabel(amt), amt)
+		status.Text = "Borrowed " .. moneyLabel(amt) .. " · due on tax day " .. moneyLabel(owedAdd)
+		MG.Save(); refreshLoans()
+	end
+
 	local amounts = { 100, 250, 500, 1000 }
 	for i, amt in ipairs(amounts) do
 		local b = button(body, {
-			Text = "Borrow " .. moneyLabel(amt), Size = UDim2.new(0.48, -3, 0, 28),
-			Position = UDim2.new((i % 2 == 1) and 0 or 0.52, 0, 0, 200 + math.floor((i - 1) / 2) * 34),
+			Text = "Borrow " .. moneyLabel(amt), Size = UDim2.new(0.48, -3, 0, 26),
+			Position = UDim2.new((i % 2 == 1) and 0 or 0.52, 0, 0, 198 + math.floor((i - 1) / 2) * 30),
 			BackgroundColor3 = Color3.fromRGB(50, 120, 80), TextSize = 11,
-		}, function()
-			if not isDaytime() then status.Text = "Bank closed at night." return end
-			advanceDaysIfNeeded()
-			local rate = currentInterestRate()
-			local owedAdd = math.floor(amt * (1 + rate))
-			table.insert(MG._data.loans, {
-				id = (MG._data.loans[#MG._data.loans] and MG._data.loans[#MG._data.loans].id or 0) + 1,
-				amount = amt, owed = owedAdd,
-				startDay = MG._data.dayNumber or 1,
-				lastFeeDay = MG._data.dayNumber or 1,
-			})
-			addCookies(amt)
-			pushHistory("loan", "Borrowed " .. moneyLabel(amt), amt)
-			status.Text = "Borrowed " .. moneyLabel(amt) .. " · tax-day due " .. moneyLabel(owedAdd)
-			MG.Save(); refreshLoans()
-		end)
+		}, function() doBorrow(amt) end)
 		table.insert(borrowBtns, b)
 	end
 
+	-- custom amount
+	local th2 = detectTheme()
+	local borrowBox = Instance.new("TextBox")
+	borrowBox.PlaceholderText = "Custom $"
+	borrowBox.Text = ""
+	borrowBox.Font = Enum.Font.GothamMedium
+	borrowBox.TextSize = 12
+	borrowBox.TextColor3 = col(th2, "Text")
+	borrowBox.PlaceholderColor3 = col(th2, "SubText")
+	borrowBox.BackgroundColor3 = col(th2, "Background")
+	borrowBox.BorderSizePixel = 0
+	borrowBox.Size = UDim2.new(0.62, -3, 0, 28)
+	borrowBox.Position = UDim2.new(0, 0, 0, 262)
+	borrowBox.ClearTextOnFocus = false
+	borrowBox.Parent = body
+	corner(borrowBox, 6)
+	stroke(borrowBox, col(th2, "Stroke"), 1)
+	table.insert(borrowBtns, borrowBox)
+
+	local customBorrow = button(body, {
+		Text = "Borrow", Size = UDim2.new(0.38, -3, 0, 28), Position = UDim2.new(0.62, 0, 0, 262),
+		BackgroundColor3 = Color3.fromRGB(50, 120, 80), TextSize = 11,
+	}, function()
+		local n = tonumber((borrowBox.Text or ""):gsub("[^%d%.]", ""))
+		doBorrow(n)
+	end)
+	table.insert(borrowBtns, customBorrow)
+
 	local payAll = button(body, {
-		Text = "Pay ALL loans", Size = UDim2.new(0.48, -3, 0, 28), Position = UDim2.new(0, 0, 0, 274),
+		Text = "Pay ALL loans", Size = UDim2.new(0.48, -3, 0, 28), Position = UDim2.new(0, 0, 0, 298),
 		BackgroundColor3 = col(th, "AccentBlue"), TextSize = 11,
 	}, function()
 		local pay = totalOwed()
@@ -1143,21 +1211,28 @@ function MG.OpenBank()
 		pushHistory("loan", "Paid all loans", -pay)
 		MG._data.loans = {}; MG.Save(); status.Text = "All cleared!"; refreshLoans()
 	end)
-	table.insert(borrowBtns, payAll)
-
+	-- payAll always available
 	local earlyTax = button(body, {
-		Text = "Pay tax early", Size = UDim2.new(0.48, -3, 0, 28), Position = UDim2.new(0.52, 0, 0, 274),
+		Text = "Pay tax " .. moneyLabel(earlyTaxAmount()),
+		Size = UDim2.new(0.48, -3, 0, 28), Position = UDim2.new(0.52, 0, 0, 298),
 		BackgroundColor3 = Color3.fromRGB(160, 100, 60), TextSize = 11,
 	}, function()
 		local tax = earlyTaxAmount()
-		if not trySpend(tax) then status.Text = "Need " .. moneyLabel(tax) .. " (10× CPS)" return end
+		if not trySpend(tax) then status.Text = "Need " .. moneyLabel(tax) return end
 		MG._data.pendingTax = 0
 		MG._data.taxDayPaid = MG._data.dayNumber or 1
-		pushHistory("tax", "Paid tax early", -tax)
+		pushHistory("tax", "Paid tax early " .. moneyLabel(tax), -tax)
 		MG.Save()
 		playSfx(SND_BUY, 0.4)
-		status.Text = "Paid taxes " .. moneyLabel(tax) .. " (10× CPS) — next tax in 5 days"
+		status.Text = "Paid taxes " .. moneyLabel(tax) .. " — next tax in 5 days"
+		earlyTax.Text = "Pay tax " .. moneyLabel(earlyTaxAmount())
 		fireBalance()
+	end)
+
+	-- taller bank window for custom field
+	pcall(function()
+		local f = win.gui:FindFirstChild("Main", true) or win.frame
+		if f and f:IsA("Frame") then f.Size = UDim2.fromOffset(340, 450) end
 	end)
 
 	-- live header + loans (no close/reopen needed)
@@ -1166,11 +1241,13 @@ function MG.OpenBank()
 			advanceDaysIfNeeded()
 			dayLbl.Text = dayStatusText()
 			local taxAmt = earlyTaxAmount()
-			taxInfo.Text = string.format("Early tax pay: %s (10× CPS) · rate %d%% · loans %s",
-				moneyLabel(taxAmt), math.floor(currentInterestRate() * 100), moneyLabel(totalOwed()))
+			taxInfo.Text = "Your tax now: " .. moneyLabel(taxAmt) .. "  ·  rate " .. math.floor(currentInterestRate() * 100) .. "%  ·  loans " .. moneyLabel(totalOwed())
+			earlyTax.Text = "Pay tax " .. moneyLabel(taxAmt)
 			setBorrowVisible(isDaytime())
 			if not isDaytime() then
-				nightGate.Text = "Night — borrowing closed. You can still pay loans / early tax."
+				nightGate.Text = "Night — borrowing closed. You can still pay loans / tax."
+				earlyTax.Visible = true
+				payAll.Visible = true
 			end
 			refreshLoans()
 			if MG._data._taxWipe then
