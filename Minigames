@@ -24,7 +24,7 @@ local SND_LOSE = "rbxassetid://125502625456002"
 local ICO_SOUND_ON = "rbxassetid://16601518608"
 local ICO_SOUND_OFF = "rbxassetid://16601516029"
 local MG = {
-	Version = "2.6",
+	Version = "2.6.1",
 	_windows = {}, _data = nil, _theme = nil, _mainWindow = nil,
 	_suppressed = false, _balListeners = {}, _cpsConn = nil,
 	_dayConn = nil, _muted = false, -- cookie-game audio mute
@@ -601,11 +601,18 @@ local function button(parent, props, cb)
 	local b = Instance.new("TextButton")
 	b.AutoButtonColor = true; b.Font = Enum.Font.GothamBold; b.TextSize = 12
 	b.TextColor3 = Color3.new(1, 1, 1); b.BackgroundColor3 = col(th, "AccentBlue"); b.BorderSizePixel = 0
-	for k, v in pairs(props or {}) do b[k] = v end
+	props = props or {}
+	local quiet = props.quiet == true
+	for k, v in pairs(props) do
+		-- skip custom flags that are not TextButton properties
+		if k ~= "quiet" then
+			b[k] = v
+		end
+	end
 	corner(b, 6); b.Parent = parent
 	if cb then
 		b.MouseButton1Click:Connect(function()
-			if not props or not props.quiet then
+			if not quiet then
 				uiClick()
 			end
 			cb()
