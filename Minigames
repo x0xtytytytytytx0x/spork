@@ -1,5 +1,5 @@
 --[[
-	R8//C00KI3S + Minigames  v2.5
+	R8//C00KI3S + Minigames  v2.6
 	https://raw.githubusercontent.com/x0xtytytytytytx0x/spork/refs/heads/main/Minigames
 	Cookie Clicker core + side minigames, shared wallet.
 	Cookie: rbxassetid://131611164  Clicker: rbxassetid://100640210821551
@@ -24,7 +24,7 @@ local SND_LOSE = "rbxassetid://125502625456002"
 local ICO_SOUND_ON = "rbxassetid://16601518608"
 local ICO_SOUND_OFF = "rbxassetid://16601516029"
 local MG = {
-	Version = "2.5",
+	Version = "2.6",
 	_windows = {}, _data = nil, _theme = nil, _mainWindow = nil,
 	_suppressed = false, _balListeners = {}, _cpsConn = nil,
 	_dayConn = nil, _muted = false, -- cookie-game audio mute
@@ -101,26 +101,27 @@ local BUILDINGS = {
 	{ id = "chance", name = "Chancemaker", baseCost = 2.6e16, cps = 2.1e10, desc = "Cookies out of thin air" },
 }
 local UPGRADES = {
-	{ id = "reinforced", name = "Reinforced index finger", cost = 100, req = { cursor = 1 }, clickMult = 2, desc = "Clicks twice as efficient" },
-	{ id = "carpal", name = "Carpal tunnel cream", cost = 500, req = { cursor = 1 }, clickMult = 2, desc = "Clicks twice as efficient" },
-	{ id = "ambidextrous", name = "Ambidextrous", cost = 10000, req = { cursor = 10 }, clickMult = 2, desc = "Clicks twice as efficient" },
-	{ id = "thousandfingers", name = "Thousand fingers", cost = 100000, req = { cursor = 25 }, clickAdd = 0.1, desc = "+0.1 per non-cursor building per click" },
-	{ id = "forwards", name = "Forwards from grandma", cost = 1000, req = { grandma = 1 }, buildMult = { grandma = 2 }, desc = "Grandmas x2" },
-	{ id = "steel", name = "Steel-plated rolling pins", cost = 5000, req = { grandma = 5 }, buildMult = { grandma = 2 }, desc = "Grandmas x2" },
-	{ id = "lubricated", name = "Lubricated dentures", cost = 50000, req = { grandma = 25 }, buildMult = { grandma = 2 }, desc = "Grandmas x2" },
-	{ id = "cheapers", name = "Cheap hoes", cost = 11000, req = { farm = 1 }, buildMult = { farm = 2 }, desc = "Farms x2" },
-	{ id = "fertilizer", name = "Fertilizer", cost = 55000, req = { farm = 5 }, buildMult = { farm = 2 }, desc = "Farms x2" },
-	{ id = "cookie_trees", name = "Cookie trees", cost = 550000, req = { farm = 25 }, buildMult = { farm = 2 }, desc = "Farms x2" },
-	{ id = "sugar_gas", name = "Sugar gas", cost = 120000, req = { mine = 1 }, buildMult = { mine = 2 }, desc = "Mines x2" },
-	{ id = "megadrill", name = "Megadrill", cost = 600000, req = { mine = 5 }, buildMult = { mine = 2 }, desc = "Mines x2" },
-	{ id = "sturdier", name = "Sturdier conveyor belts", cost = 1.3e6, req = { factory = 1 }, buildMult = { factory = 2 }, desc = "Factories x2" },
-	{ id = "child_labor", name = "Worker drones", cost = 6.5e6, req = { factory = 5 }, buildMult = { factory = 2 }, desc = "Factories x2" },
-	{ id = "plastic_mouse", name = "Plastic mouse", cost = 50000, req = {}, mousePct = 0.01, desc = "Clicking gains +1% of CPS" },
-	{ id = "iron_mouse", name = "Iron mouse", cost = 5e6, req = {}, mousePct = 0.01, desc = "Clicking gains +1% of CPS" },
-	{ id = "titanium_mouse", name = "Titanium mouse", cost = 500e6, req = {}, mousePct = 0.01, desc = "Clicking gains +1% of CPS" },
-	{ id = "oatmeal", name = "Oatmeal raisin cookies", cost = 9999999, req = {}, cpsMult = 1.15, desc = "Cookie production +15%" },
-	{ id = "sugar_cookies", name = "Sugar cookies", cost = 99999999, req = {}, cpsMult = 1.15, desc = "Cookie production +15%" },
-	{ id = "butter", name = "Butter cookies", cost = 999999999, req = {}, cpsMult = 1.15, desc = "Cookie production +15%" },
+	-- rebirth = min prestige to unlock (0 = available from start)
+	{ id = "reinforced", name = "Reinforced index finger", cost = 100, rebirth = 0, req = { cursor = 1 }, clickMult = 2, desc = "Clicks twice as efficient" },
+	{ id = "carpal", name = "Carpal tunnel cream", cost = 500, rebirth = 0, req = { cursor = 1 }, clickMult = 2, desc = "Clicks twice as efficient" },
+	{ id = "forwards", name = "Forwards from grandma", cost = 1000, rebirth = 0, req = { grandma = 1 }, buildMult = { grandma = 2 }, desc = "Grandmas x2" },
+	{ id = "plastic_mouse", name = "Plastic mouse", cost = 50000, rebirth = 0, req = {}, mousePct = 0.01, desc = "Clicking gains +1% of CPS" },
+	{ id = "ambidextrous", name = "Ambidextrous", cost = 10000, rebirth = 1, req = { cursor = 10 }, clickMult = 2, desc = "Clicks twice as efficient" },
+	{ id = "steel", name = "Steel-plated rolling pins", cost = 5000, rebirth = 1, req = { grandma = 5 }, buildMult = { grandma = 2 }, desc = "Grandmas x2" },
+	{ id = "cheapers", name = "Cheap hoes", cost = 11000, rebirth = 1, req = { farm = 1 }, buildMult = { farm = 2 }, desc = "Farms x2" },
+	{ id = "sugar_gas", name = "Sugar gas", cost = 120000, rebirth = 1, req = { mine = 1 }, buildMult = { mine = 2 }, desc = "Mines x2" },
+	{ id = "thousandfingers", name = "Thousand fingers", cost = 100000, rebirth = 2, req = { cursor = 25 }, clickAdd = 0.1, desc = "+0.1 per non-cursor building per click" },
+	{ id = "lubricated", name = "Lubricated dentures", cost = 50000, rebirth = 2, req = { grandma = 25 }, buildMult = { grandma = 2 }, desc = "Grandmas x2" },
+	{ id = "fertilizer", name = "Fertilizer", cost = 55000, rebirth = 2, req = { farm = 5 }, buildMult = { farm = 2 }, desc = "Farms x2" },
+	{ id = "sturdier", name = "Sturdier conveyor belts", cost = 1.3e6, rebirth = 2, req = { factory = 1 }, buildMult = { factory = 2 }, desc = "Factories x2" },
+	{ id = "oatmeal", name = "Oatmeal raisin cookies", cost = 9999999, rebirth = 2, req = {}, cpsMult = 1.15, desc = "Cookie production +15%" },
+	{ id = "megadrill", name = "Megadrill", cost = 600000, rebirth = 3, req = { mine = 5 }, buildMult = { mine = 2 }, desc = "Mines x2" },
+	{ id = "cookie_trees", name = "Cookie trees", cost = 550000, rebirth = 3, req = { farm = 25 }, buildMult = { farm = 2 }, desc = "Farms x2" },
+	{ id = "child_labor", name = "Worker drones", cost = 6.5e6, rebirth = 3, req = { factory = 5 }, buildMult = { factory = 2 }, desc = "Factories x2" },
+	{ id = "iron_mouse", name = "Iron mouse", cost = 5e6, rebirth = 3, req = {}, mousePct = 0.01, desc = "Clicking gains +1% of CPS" },
+	{ id = "sugar_cookies", name = "Sugar cookies", cost = 99999999, rebirth = 4, req = {}, cpsMult = 1.15, desc = "Cookie production +15%" },
+	{ id = "titanium_mouse", name = "Titanium mouse", cost = 500e6, rebirth = 5, req = {}, mousePct = 0.01, desc = "Clicking gains +1% of CPS" },
+	{ id = "butter", name = "Butter cookies", cost = 999999999, rebirth = 5, req = {}, cpsMult = 1.15, desc = "Cookie production +15%" },
 }
 local BUILDING_ICONS = {
 	cursor = "🖕", grandma = "rbxassetid://137952597072084", farm = "🌾", mine = "⛏️",
@@ -146,7 +147,10 @@ local function defaultData()
 		pendingTax = 0,
 		dayNumber = 1,
 		dayStartUnix = os.time(),
-		history = {}, -- { t, kind, text, amount }
+		dayRate = 0.12, -- interest for current day (varies)
+		dayEvent = "none", -- none | eclipse | star | freebank | storm | golden
+		dayEventDay = 0,
+		history = {},
 		stats = {},
 		lastSave = os.time(), lastTick = os.clock(),
 	}
@@ -171,12 +175,12 @@ local function daysUntilTax()
 	return 5 - mod
 end
 local function earlyTaxAmount()
+	-- STRICT: tax = floor(CPS × 10). Never forced to $1.
 	local cps = 0
 	pcall(function() cps = computeCPS() end)
-	-- always 10× cookies/sec (same as tax day), never a flat $1 unless CPS is tiny
-	local t = math.floor(cps * 10 + 1e-9)
-	if t < 1 then t = 1 end
-	return t
+	cps = tonumber(cps) or 0
+	if cps < 0 then cps = 0 end
+	return math.floor(cps * 10 + 1e-9)
 end
 local function dayPhase01()
 	-- 0..1 within current day
@@ -186,14 +190,73 @@ local function dayPhase01()
 	if elapsed < 0 then elapsed = 0 end
 	return (elapsed % DAY_SECONDS) / DAY_SECONDS
 end
+local DAY_EVENTS = {
+	none = { emoji = "", mult = 1, rate = nil, forceNight = false, label = "" },
+	eclipse = { emoji = "🌑", mult = 1, rate = nil, forceNight = true, label = "Eclipse — night all day" },
+	star = { emoji = "🌠", mult = 2, rate = nil, forceNight = false, label = "Shooting star — 2× earnings" },
+	freebank = { emoji = "🏦", mult = 1, rate = 0, forceNight = false, label = "Bank holiday — 0% interest" },
+	storm = { emoji = "⛈️", mult = 0.5, rate = nil, forceNight = false, label = "Storm — half production" },
+	golden = { emoji = "✨", mult = 1.5, rate = nil, forceNight = false, label = "Golden hour — 1.5× earnings" },
+}
+local function rollDayEvent(dayNum)
+	-- rare events (~18% any event)
+	local rng = Random.new(dayNum * 9973 + 1337)
+	local roll = rng:NextNumber()
+	if roll < 0.04 then return "eclipse"
+	elseif roll < 0.08 then return "star"
+	elseif roll < 0.12 then return "freebank"
+	elseif roll < 0.15 then return "storm"
+	elseif roll < 0.18 then return "golden"
+	end
+	return "none"
+end
+local function rollDayRate(dayNum)
+	local rng = Random.new(dayNum * 4243 + 77)
+	-- 4% .. 28% varied each day
+	return math.floor(rng:NextNumber(0.04, 0.28) * 1000) / 1000
+end
+local function ensureDayMeta()
+	if not MG._data then return end
+	local d = MG._data.dayNumber or 1
+	if MG._data.dayEventDay ~= d then
+		MG._data.dayEventDay = d
+		MG._data.dayEvent = rollDayEvent(d)
+		MG._data.dayRate = rollDayRate(d)
+		local ev = DAY_EVENTS[MG._data.dayEvent] or DAY_EVENTS.none
+		if ev.rate ~= nil then MG._data.dayRate = ev.rate end
+		if MG._data.dayEvent ~= "none" then
+			pushHistory("event", (ev.emoji or "") .. " " .. (ev.label or MG._data.dayEvent), 0)
+		end
+	end
+	if MG._data.dayRate == nil then MG._data.dayRate = rollDayRate(d) end
+end
+local function getDayEvent()
+	ensureDayMeta()
+	return DAY_EVENTS[MG._data.dayEvent or "none"] or DAY_EVENTS.none
+end
 local function isDaytime()
+	local ev = getDayEvent()
+	if ev.forceNight then return false end
 	return dayPhase01() < 0.5
 end
 local function dayEmoji()
-	return isDaytime() and "☀️" or "🌙"
+	local ev = getDayEvent()
+	if ev.forceNight then return "🌑" end
+	if ev.emoji ~= "" and not isDaytime() then return ev.emoji end
+	if isDaytime() then
+		return (ev.emoji ~= "" and ev.emoji) or "☀️"
+	end
+	return "🌙"
 end
 local function currentInterestRate()
-	return 0.12 -- bank only open day; fixed day rate
+	ensureDayMeta()
+	local r = tonumber(MG._data.dayRate)
+	if r == nil then r = 0.12 end
+	return r
+end
+local function eventEarnMult()
+	local ev = getDayEvent()
+	return ev.mult or 1
 end
 local function rebirthCost()
 	-- first rebirth $10K, then scales
@@ -216,37 +279,39 @@ local function advanceDaysIfNeeded()
 	local prevDay = MG._data.dayNumber or 1
 	MG._data.dayNumber = prevDay + daysPassed
 	MG._data.dayStartUnix = start + daysPassed * DAY_SECONDS
-	-- mild late growth on loans (optional debt; not forced except tax day)
+	-- roll rate + event for the new day
+	MG._data.dayEventDay = -1
+	ensureDayMeta()
+	-- mild late growth on loans
 	for _, loan in ipairs(MG._data.loans or {}) do
 		for _ = 1, daysPassed do
 			loan.owed = math.floor((loan.owed or 0) * 1.03)
 		end
 		loan.lastFeeDay = MG._data.dayNumber
 	end
-	-- tax every 5 days
+	-- tax every 5 days — amount is pure CPS×10 (can be 0 if no CPS)
 	local cycle = math.floor((MG._data.dayNumber - 1) / 5)
 	local paidCycle = math.floor((MG._data.taxDayPaid or 0) / 5)
 	if cycle > paidCycle then
 		if (MG._data.pendingTax or 0) > 0 then
 			MG._data._taxWipe = true
 		else
-			local cps = 0
-			pcall(function() cps = computeCPS() end)
-			local tax = math.max(1, math.floor(cps * 10))
-			-- on tax day also collect loans from cash or wipe
+			local tax = earlyTaxAmount()
 			local loans = totalLoanOwed()
 			MG._data.pendingTax = tax
 			MG._data._taxLoans = loans
-			-- auto-seize loans + tax from account
 			local need = tax + loans
-			if (MG._data.cookies or 0) >= need then
+			if need <= 0 then
+				MG._data.pendingTax = 0
+				MG._data.taxDayPaid = MG._data.dayNumber
+			elseif (MG._data.cookies or 0) >= need then
 				MG._data.cookies -= need
 				MG._data.loans = {}
 				MG._data.pendingTax = 0
 				MG._data.taxDayPaid = MG._data.dayNumber
 				MG._data._taxSeized = need
+				pushHistory("tax", "Tax day auto-paid", -need)
 			else
-				-- not enough → lose
 				MG._data._taxWipe = true
 			end
 		end
@@ -294,6 +359,9 @@ function MG.Load()
 	d.taxDayPaid = math.floor(tonumber(d.taxDayPaid) or 0)
 	d.pendingTax = math.max(0, math.floor(tonumber(d.pendingTax) or 0))
 	d.history = type(d.history) == "table" and d.history or {}
+	d.dayRate = tonumber(d.dayRate)
+	d.dayEvent = type(d.dayEvent) == "string" and d.dayEvent or "none"
+	d.dayEventDay = tonumber(d.dayEventDay) or 0
 	d.lastTick = os.clock()
 	MG._data = d
 	return d
@@ -400,7 +468,10 @@ local function computeCPS()
 	for _, b in ipairs(BUILDINGS) do
 		total += (MG._data.buildings[b.id] or 0) * b.cps * getBuildMult(b.id)
 	end
-	return total * getCpsMult()
+	local base = total * getCpsMult()
+	local em = 1
+	pcall(function() em = eventEarnMult() end)
+	return base * em
 end
 local function computeClickPower()
 	if not MG._data then MG.Load() end
@@ -426,6 +497,19 @@ end
 local function payoutPush(bet)
 	addCookies(bet)
 	pushHistory("game", "Push / refund", 0)
+end
+local LOSE_MSGS = {
+	"House always wins.",
+	"Oof. Cookies gone.",
+	"Not this time.",
+	"Tough break.",
+	"RNG said no.",
+	"Better luck next round.",
+	"That's a miss.",
+	"Cookies evaporated.",
+}
+local function loseMsg()
+	return LOSE_MSGS[math.random(1, #LOSE_MSGS)]
 end
 local function payoutLose(bet)
 	pushHistory("game", "Lose", -bet)
@@ -481,22 +565,21 @@ end
 local function dayStatusText()
 	if not MG._data then return "—" end
 	advanceDaysIfNeeded()
+	ensureDayMeta()
 	local phase = dayPhase01()
 	local leftSec = math.max(0, math.floor((1 - phase) * DAY_SECONDS))
 	local dtax = daysUntilTax()
-	local cps = 0
-	pcall(function() cps = computeCPS() end)
-	local taxAmt = math.max(1, math.floor(cps * 10 + 1e-9))
-	local taxHint
-	if dtax == 0 then
-		taxHint = "TAX TODAY " .. moneyLabel(taxAmt)
-	else
-		taxHint = "tax in " .. dtax .. "d → " .. moneyLabel(taxAmt)
-	end
-	return string.format("%s Day %d · %dm%ds · %s · loans %s",
+	local taxAmt = earlyTaxAmount()
+	local ratePct = math.floor((currentInterestRate() or 0) * 100 + 0.5)
+	local ev = getDayEvent()
+	local taxHint = (dtax == 0) and ("TAX TODAY " .. moneyLabel(taxAmt)) or ("tax in " .. dtax .. "d → " .. moneyLabel(taxAmt))
+	local evBit = (ev.label ~= "" and (ev.emoji .. " " .. ev.label)) or ""
+	return string.format("%s Day %d · %dm%ds · rate %d%% · %s%s · loans %s",
 		dayEmoji(), MG._data.dayNumber or 1,
 		math.floor(leftSec / 60), leftSec % 60,
-		taxHint, moneyLabel(totalLoanOwed()))
+		ratePct, taxHint,
+		evBit ~= "" and (" · " .. evBit) or "",
+		moneyLabel(totalLoanOwed()))
 end
 local function corner(p, r)
 	local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 8); c.Parent = p; return c
@@ -522,7 +605,9 @@ local function button(parent, props, cb)
 	corner(b, 6); b.Parent = parent
 	if cb then
 		b.MouseButton1Click:Connect(function()
-			uiClick()
+			if not props or not props.quiet then
+				uiClick()
+			end
 			cb()
 		end)
 	end
@@ -656,29 +741,14 @@ function MG.OpenClicker()
 		Text = moneyLabel(MG._data.cookies), Size = UDim2.new(1, -36, 0, 28),
 		Font = Enum.Font.GothamBold, TextSize = 22, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 5,
 	})
-	-- cookie-only background (slow drift)
+	-- cookie-only background (static)
 	local bg = Instance.new("ImageLabel")
 	bg.Name = "CookieBG"; bg.BackgroundTransparency = 1; bg.Image = COOKIE_BG
 	bg.ScaleType = Enum.ScaleType.Crop; bg.ImageTransparency = 0.35
-	bg.AnchorPoint = Vector2.new(0.5, 0.5)
-	bg.Position = UDim2.new(0.5, 0, 0.5, 0)
-	bg.Size = UDim2.new(1.12, 0, 1.12, 0)
-	bg.ZIndex = 0; bg.Parent = left
+	bg.Size = UDim2.fromScale(1, 1); bg.ZIndex = 0; bg.Parent = left
 	local bgDim = Instance.new("Frame")
 	bgDim.BackgroundColor3 = Color3.fromRGB(0, 0, 0); bgDim.BackgroundTransparency = 0.45
 	bgDim.BorderSizePixel = 0; bgDim.Size = UDim2.fromScale(1, 1); bgDim.ZIndex = 0; bgDim.Parent = left
-	task.spawn(function()
-		local t = 0
-		while bg.Parent do
-			t += 0.016
-			local ox = math.sin(t * 0.15) * 10
-			local oy = math.cos(t * 0.11) * 8
-			local sc = 1.1 + math.sin(t * 0.08) * 0.03
-			bg.Position = UDim2.new(0.5, ox, 0.5, oy)
-			bg.Size = UDim2.new(sc, 0, sc, 0)
-			task.wait(0.03)
-		end
-	end)
 
 	-- mute button (cookie game only)
 	local muteBtn = Instance.new("ImageButton")
@@ -809,6 +879,21 @@ function MG.OpenClicker()
 		playSfx(SND_CLICK, 0.55)
 		pulseCookie()
 		floatText("+" .. moneyLabel(power), Color3.fromRGB(120, 255, 140))
+		-- flash a cursor on the cookie
+		local flash = Instance.new("TextLabel")
+		flash.BackgroundTransparency = 1
+		flash.Text = "🖕"
+		flash.TextSize = 22
+		flash.Size = UDim2.fromOffset(28, 28)
+		flash.AnchorPoint = Vector2.new(0.5, 0.5)
+		flash.Position = UDim2.new(0.5, math.random(-40, 40), 0.5, math.random(-40, 40))
+		flash.ZIndex = 6
+		flash.Parent = cookieBtn
+		TweenService:Create(flash, TweenInfo.new(0.45), {
+			TextTransparency = 1,
+			Position = flash.Position + UDim2.fromOffset(0, -18),
+		}):Play()
+		task.delay(0.5, function() if flash then flash:Destroy() end end)
 		cookieCount.Text = moneyLabel(MG._data.cookies)
 		cpsLbl.Text = "per second: " .. moneyLabel(computeCPS())
 		clickLbl.Text = "per click: " .. moneyLabel(computeClickPower())
@@ -891,11 +976,10 @@ function MG.OpenClicker()
 			label(row, { Text = bdef.name .. "  [" .. tostring(owned) .. "]", Position = UDim2.new(0, 48, 0, 4), Size = UDim2.new(1, -120, 0, 16), Font = Enum.Font.GothamBold, TextSize = 12 })
 			label(row, { Text = moneyLabel(bdef.cps * getBuildMult(bdef.id)) .. "/s each", Position = UDim2.new(0, 48, 0, 20), Size = UDim2.new(1, -120, 0, 12), TextSize = 10, TextColor3 = col(th, "SubText") })
 			label(row, { Text = moneyLabel(cost), Position = UDim2.new(0, 48, 0, 32), Size = UDim2.new(1, -120, 0, 12), TextSize = 10, TextColor3 = (MG._data.cookies >= cost) and Color3.fromRGB(120, 255, 140) or col(th, "AccentRed") })
-			button(row, { Text = "Buy", Size = UDim2.fromOffset(52, 28), Position = UDim2.new(1, -58, 0.5, -14), BackgroundColor3 = col(th, "AccentBlue"), TextSize = 11 }, function()
+			button(row, { Text = "Buy", quiet = true, Size = UDim2.fromOffset(52, 28), Position = UDim2.new(1, -58, 0.5, -14), BackgroundColor3 = col(th, "AccentBlue"), TextSize = 11 }, function()
 				local o = MG._data.buildings[bdef.id] or 0
 				local c = buildingCost(bdef, o)
 				if trySpend(c) then
-					playSfx(SND_BUY, 0.5)
 					pushHistory("buy", "Bought " .. bdef.name, -c)
 					MG._data.buildings[bdef.id] = o + 1; MG.Save(); refreshStore()
 					if bdef.id == "cursor" then pcall(rebuildOrbitCursors) end
@@ -910,10 +994,13 @@ function MG.OpenClicker()
 		for _, ch in ipairs(upgPage:GetChildren()) do
 			if ch:IsA("Frame") or ch:IsA("TextLabel") or ch:IsA("TextButton") then pcall(function() ch:Destroy() end) end
 		end
+		local prestige = MG._data.prestige or 0
 		local shown = 0
 		for _, udef in ipairs(UPGRADES) do
 			local owned = MG._data.upgrades and MG._data.upgrades[udef.id] and true or false
-			local locked = false
+			local needReb = udef.rebirth or 0
+			local rebLocked = prestige < needReb
+			local locked = rebLocked
 			local reqTxt = ""
 			if not owned and type(udef.req) == "table" then
 				for bid, need in pairs(udef.req) do
@@ -923,7 +1010,7 @@ function MG.OpenClicker()
 			end
 			local row = Instance.new("Frame")
 			row.BackgroundColor3 = col(th, "Background")
-			row.Size = UDim2.new(1, -8, 0, 48)
+			row.Size = UDim2.new(1, -8, 0, 56)
 			row.BorderSizePixel = 0
 			row.Parent = upgPage
 			corner(row, 6)
@@ -931,19 +1018,20 @@ function MG.OpenClicker()
 				stroke(row, Color3.fromRGB(80, 160, 100), 1)
 				label(row, { Text = "✓ " .. udef.name, Position = UDim2.new(0, 8, 0, 4), Size = UDim2.new(1, -16, 0, 16), TextSize = 12, TextColor3 = Color3.fromRGB(120, 255, 140) })
 				label(row, { Text = udef.desc, Position = UDim2.new(0, 8, 0, 22), Size = UDim2.new(1, -16, 0, 18), TextSize = 10, TextColor3 = col(th, "SubText") })
+			elseif rebLocked then
+				label(row, { Text = "🔒 " .. udef.name, Position = UDim2.new(0, 8, 0, 4), Size = UDim2.new(1, -16, 0, 16), TextSize = 12, TextColor3 = col(th, "SubText") })
+				label(row, { Text = "Unlocks at rebirth " .. tostring(needReb) .. "  (you: " .. tostring(prestige) .. ")", Position = UDim2.new(0, 8, 0, 22), Size = UDim2.new(1, -16, 0, 18), TextSize = 10, TextColor3 = col(th, "SubText") })
 			elseif locked then
 				label(row, { Text = "🔒 " .. udef.name, Position = UDim2.new(0, 8, 0, 4), Size = UDim2.new(1, -16, 0, 16), TextSize = 12, TextColor3 = col(th, "SubText") })
 				label(row, { Text = "Need " .. reqTxt, Position = UDim2.new(0, 8, 0, 22), Size = UDim2.new(1, -16, 0, 18), TextSize = 10, TextColor3 = col(th, "SubText") })
 			else
-				row.Size = UDim2.new(1, -8, 0, 56)
 				label(row, { Text = udef.name, Position = UDim2.new(0, 8, 0, 2), Size = UDim2.new(1, -70, 0, 14), Font = Enum.Font.GothamBold, TextSize = 12 })
 				label(row, { Text = udef.desc, Position = UDim2.new(0, 8, 0, 18), Size = UDim2.new(1, -70, 0, 14), TextSize = 10, TextTruncate = Enum.TextTruncate.AtEnd, TextColor3 = col(th, "SubText") })
 				label(row, { Text = moneyLabel(udef.cost), Position = UDim2.new(0, 8, 0, 34), Size = UDim2.new(1, -70, 0, 16), TextSize = 12, Font = Enum.Font.GothamBold, TextColor3 = (MG._data.cookies >= udef.cost) and Color3.fromRGB(120, 255, 140) or col(th, "AccentRed") })
 				local cost, uid = udef.cost, udef.id
-				button(row, { Text = "Buy", Size = UDim2.fromOffset(52, 28), Position = UDim2.new(1, -58, 0.5, -14), BackgroundColor3 = col(th, "AccentBlue"), TextSize = 11 }, function()
+				button(row, { Text = "Buy", quiet = true, Size = UDim2.fromOffset(52, 28), Position = UDim2.new(1, -58, 0.5, -14), BackgroundColor3 = col(th, "AccentBlue"), TextSize = 11 }, function()
 					if MG._data.upgrades[uid] then return end
 					if trySpend(cost) then
-						playSfx(SND_BUY, 0.5)
 						MG._data.upgrades[uid] = true
 						pushHistory("upgrade", "Bought " .. udef.name, -cost)
 						MG.Save()
@@ -1241,8 +1329,9 @@ function MG.OpenBank()
 			advanceDaysIfNeeded()
 			dayLbl.Text = dayStatusText()
 			local taxAmt = earlyTaxAmount()
-			taxInfo.Text = "Your tax now: " .. moneyLabel(taxAmt) .. "  ·  rate " .. math.floor(currentInterestRate() * 100) .. "%  ·  loans " .. moneyLabel(totalOwed())
-			earlyTax.Text = "Pay tax " .. moneyLabel(taxAmt)
+			local ratePct = math.floor(currentInterestRate() * 100 + 0.5)
+			taxInfo.Text = "Tax (CPS×10): " .. moneyLabel(taxAmt) .. "  ·  today rate " .. ratePct .. "%  ·  loans " .. moneyLabel(totalOwed())
+			earlyTax.Text = taxAmt > 0 and ("Pay tax " .. moneyLabel(taxAmt)) or "No tax (0 CPS)"
 			setBorrowVisible(isDaytime())
 			if not isDaytime() then
 				nightGate.Text = "Night — borrowing closed. You can still pay loans / tax."
@@ -1298,7 +1387,7 @@ function MG.OpenBlackjack()
 		if result == "win" then payoutWin(bet); msg.Text = "Win +" .. moneyLabel(bet) .. "  (2× stake)"
 		elseif result == "blackjack" then local pay = math.floor(bet * 2.5); addCookies(pay); msg.Text = "Blackjack +" .. moneyLabel(pay)
 		elseif result == "push" then payoutPush(bet); msg.Text = "Push"
-		else payoutLose(bet); msg.Text = "Lose" end
+		else payoutLose(bet); msg.Text = loseMsg() end
 		msg.TextColor3 = (result == "lose") and col(th, "AccentRed") or Color3.fromRGB(120, 255, 140)
 	end
 	local y = bb.contentY + 74
@@ -1354,7 +1443,7 @@ function MG.OpenTicTacToe()
 	local function finish(result)
 		over = true; local bet = bb.getBet()
 		if result == "X" then payoutWin(bet); msg.Text = "Win +" .. moneyLabel(bet) .. "  (2×)"; msg.TextColor3 = Color3.fromRGB(120, 255, 140)
-		elseif result == "O" then payoutLose(bet); msg.Text = "Lose"; msg.TextColor3 = col(th, "AccentRed")
+		elseif result == "O" then payoutLose(bet); msg.Text = loseMsg(); msg.TextColor3 = col(th, "AccentRed")
 		else payoutPush(bet); msg.Text = "Draw"; msg.TextColor3 = Color3.fromRGB(220, 210, 120) end
 	end
 	for i = 1, 9 do
@@ -1389,7 +1478,7 @@ function MG.OpenRPS()
 		local winMap = { Rock = "Scissors", Paper = "Rock", Scissors = "Paper" }
 		if choice == ai then payoutPush(bet); msg.Text = "Tie vs " .. ai; msg.TextColor3 = Color3.fromRGB(220, 210, 120)
 		elseif winMap[choice] == ai then payoutWin(bet); msg.Text = choice .. " beats " .. ai .. "  +" .. moneyLabel(bet); msg.TextColor3 = Color3.fromRGB(120, 255, 140)
-		else payoutLose(bet); msg.Text = ai .. " beats " .. choice; msg.TextColor3 = col(th, "AccentRed") end
+		else payoutLose(bet); msg.Text = loseMsg() .. "  (" .. ai .. " > " .. choice .. ")"; msg.TextColor3 = col(th, "AccentRed") end
 	end
 	for i, name in ipairs(opts) do
 		button(body, { Text = name, Size = UDim2.new(0.32, -2, 0, 32), Position = UDim2.new((i - 1) * 0.34, 0, 0, bb.contentY + 50), BackgroundColor3 = col(th, "AccentBlue") }, function() play(name) end)
@@ -1408,7 +1497,7 @@ function MG.OpenCoinFlip()
 		if not trySpend(bet) then msg.Text = "Need cookies." return end
 		local res = (math.random(1, 2) == 1) and "Heads" or "Tails"
 		if res == pick then payoutWin(bet); msg.Text = res .. "! +" .. moneyLabel(bet); msg.TextColor3 = Color3.fromRGB(120, 255, 140)
-		else payoutLose(bet); msg.Text = res .. ". Lose."; msg.TextColor3 = col(th, "AccentRed") end
+		else payoutLose(bet); msg.Text = loseMsg() .. "  (" .. res .. ")"; msg.TextColor3 = col(th, "AccentRed") end
 	end
 	button(body, { Text = "Heads", Size = UDim2.new(0.48, -3, 0, 36), Position = UDim2.new(0, 0, 0, bb.contentY + 40), BackgroundColor3 = col(th, "AccentBlue") }, function() flip("Heads") end)
 	button(body, { Text = "Tails", Size = UDim2.new(0.48, -3, 0, 36), Position = UDim2.new(0.52, 0, 0, bb.contentY + 40), BackgroundColor3 = col(th, "AccentRed") }, function() flip("Tails") end)
@@ -1432,7 +1521,7 @@ function MG.OpenHigherLower()
 		local ok = (higher and nxt > current) or ((not higher) and nxt < current)
 		cardLbl.Text = "Card: " .. names[nxt] .. "  (was " .. names[current] .. ")"; current = nxt
 		if ok then payoutWin(bet); msg.Text = "Correct! +" .. moneyLabel(bet); msg.TextColor3 = Color3.fromRGB(120, 255, 140)
-		else payoutLose(bet); msg.Text = "Wrong."; msg.TextColor3 = col(th, "AccentRed") end
+		else payoutLose(bet); msg.Text = loseMsg() .. "  Wrong."; msg.TextColor3 = col(th, "AccentRed") end
 	end
 	button(body, { Text = "Higher", Size = UDim2.new(0.48, -3, 0, 32), Position = UDim2.new(0, 0, 0, bb.contentY + 55), BackgroundColor3 = Color3.fromRGB(50, 120, 80) }, function() guess(true) end)
 	button(body, { Text = "Lower", Size = UDim2.new(0.48, -3, 0, 32), Position = UDim2.new(0.52, 0, 0, bb.contentY + 55), BackgroundColor3 = col(th, "AccentRed") }, function() guess(false) end)
