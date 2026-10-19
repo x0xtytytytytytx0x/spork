@@ -5,7 +5,9 @@
     {
       "version": "2.2",
       "notes": [
-        "Some bug fixes and a esp and admin pannel and upgrade to minigames."
+        "Some bug fixes with theme bleedover and some other useless junk",
+"Added a beta ESP and beta COMMANDS",
+"upgraded the minigames to use cookie clicker.",
       ]
     }, 
 {
