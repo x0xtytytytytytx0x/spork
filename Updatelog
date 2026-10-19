@@ -1,8 +1,14 @@
 {
-  "version": "1.2",
-  "currentVersion": "1.2",
+  "version": "2.2",
+  "currentVersion": "2.2",
   "changelog": [
     {
+      "version": "2.2",
+      "notes": [
+        "Some bug fixes and a esp and admin pannel and upgrade to minigames."
+      ]
+    }, 
+{
       "version": "1.2",
       "notes": [
         "Added mini games with a working bank"
