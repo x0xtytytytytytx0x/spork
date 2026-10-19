@@ -1,35 +1,541 @@
-{
-  "version": "1.0",
-  "credit": "Command list",
-  "commands": [
-    { "name": "fly", "aliases": ["flight"], "category": "Movement", "desc": "Toggle fly", "ownerOnly": false },
-    { "name": "unfly", "aliases": [], "category": "Movement", "desc": "Disable fly", "ownerOnly": false },
-    { "name": "noclip", "aliases": ["nc"], "category": "Movement", "desc": "Toggle noclip", "ownerOnly": false },
-    { "name": "clip", "aliases": ["unnoclip"], "category": "Movement", "desc": "Disable noclip", "ownerOnly": false },
-    { "name": "speed", "aliases": ["ws", "walkspeed"], "category": "Movement", "desc": "Set walkspeed (speed [n])", "ownerOnly": false },
-    { "name": "jump", "aliases": ["jp", "jumppower"], "category": "Movement", "desc": "Set jump power", "ownerOnly": false },
-    { "name": "hipheight", "aliases": ["hh"], "category": "Movement", "desc": "Set hip height", "ownerOnly": false },
-    { "name": "goto", "aliases": ["to"], "category": "Teleport", "desc": "Teleport to player", "ownerOnly": false },
-    { "name": "bring", "aliases": [], "category": "Teleport", "desc": "Bring player (FE dependent)", "ownerOnly": false },
-    { "name": "tp", "aliases": ["teleport"], "category": "Teleport", "desc": "Teleport helpers", "ownerOnly": false },
-    { "name": "freeze", "aliases": ["fr"], "category": "Player", "desc": "Freeze target", "ownerOnly": false },
-    { "name": "thaw", "aliases": ["unfreeze"], "category": "Player", "desc": "Unfreeze target", "ownerOnly": false },
-    { "name": "kill", "aliases": [], "category": "Player", "desc": "Kill target (FE dependent)", "ownerOnly": false },
-    { "name": "respawn", "aliases": ["re"], "category": "Player", "desc": "Respawn", "ownerOnly": false },
-    { "name": "refresh", "aliases": ["rejoin"], "category": "Player", "desc": "Refresh character / rejoin helpers", "ownerOnly": false },
-    { "name": "invisible", "aliases": ["invis"], "category": "Player", "desc": "Local invisibility helpers", "ownerOnly": false },
-    { "name": "sit", "aliases": [], "category": "Player", "desc": "Sit", "ownerOnly": false },
-    { "name": "unsit", "aliases": [], "category": "Player", "desc": "Unsit", "ownerOnly": false },
-    { "name": "view", "aliases": ["spectate"], "category": "Camera", "desc": "View player", "ownerOnly": false },
-    { "name": "unview", "aliases": ["unspectate"], "category": "Camera", "desc": "Stop viewing", "ownerOnly": false },
-    { "name": "fov", "aliases": [], "category": "Camera", "desc": "Set FOV", "ownerOnly": false },
-    { "name": "freecam", "aliases": ["fc"], "category": "Camera", "desc": "Freecam", "ownerOnly": false },
-    { "name": "notif", "aliases": ["notify"], "category": "Utility", "desc": "Notification helpers", "ownerOnly": false },
-    { "name": "clear", "aliases": ["clr"], "category": "Utility", "desc": "Clear chat / console helpers", "ownerOnly": false },
-    { "name": "cmds", "aliases": ["commands"], "category": "Utility", "desc": "List commands", "ownerOnly": false },
-    { "name": "chatlogs", "aliases": ["logs"], "category": "Utility", "desc": "Chat logs", "ownerOnly": false },
-    { "name": "serverinfo", "aliases": ["sinfo"], "category": "Utility", "desc": "Server info", "ownerOnly": false },
-    { "name": "dex", "aliases": ["explorer"], "category": "Owner", "desc": "Dex explorer (owner only)", "ownerOnly": true },
-    { "name": "esp", "aliases": [], "category": "Owner", "desc": "ESP helpers (owner only — use R8 ESP panel)", "ownerOnly": true }
-  ]
-}
+return function(ctx)
+	local Players = ctx.Players
+	local LocalPlayer = ctx.LocalPlayer
+	local RunService = ctx.RunService or game:GetService("RunService")
+	local UserInputService = ctx.UserInputService or game:GetService("UserInputService")
+	local Lighting = game:GetService("Lighting")
+	local StarterGui = game:GetService("StarterGui")
+	local TweenService = game:GetService("TweenService")
+
+	local function notify(t, m, d)
+		if ctx.notify then ctx.notify(t, m, d) end
+	end
+	local function hrp()
+		return ctx.getHRP and ctx.getHRP() or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart"))
+	end
+	local function hum()
+		return ctx.getHumanoid and ctx.getHumanoid() or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid"))
+	end
+	local function findPlayer(q)
+		if not q or q == "" then return nil end
+		q = string.lower(tostring(q))
+		if q == "me" then return LocalPlayer end
+		for _, p in ipairs(Players:GetPlayers()) do
+			if string.find(string.lower(p.Name), q, 1, true) or string.find(string.lower(p.DisplayName), q, 1, true) then
+				return p
+			end
+		end
+		return nil
+	end
+
+	-- shared state for toggles
+	local state = {
+		noclip = nil,
+		fly = nil,
+		flyBV = nil,
+		flyBG = nil,
+		infjump = nil,
+		spin = nil,
+		btools = false,
+	}
+
+	local cmds = {}
+
+	local function add(def)
+		table.insert(cmds, def)
+	end
+
+	------------------------------------------------------------
+	-- Character
+	------------------------------------------------------------
+	add({
+		name = "speed",
+		aliases = { "ws", "walkspeed" },
+		category = "Character",
+		desc = "Set WalkSpeed. speed [number]",
+		run = function(args)
+			local h = hum()
+			if h then
+				h.WalkSpeed = tonumber(args[1]) or 16
+				notify("Commands", "WalkSpeed " .. tostring(h.WalkSpeed))
+			end
+		end,
+	})
+	add({
+		name = "jump",
+		aliases = { "jp", "jumppower" },
+		category = "Character",
+		desc = "Set JumpPower/JumpHeight. jump [number]",
+		run = function(args)
+			local h = hum()
+			if not h then return end
+			local n = tonumber(args[1]) or 50
+			pcall(function() h.JumpPower = n end)
+			pcall(function() h.JumpHeight = n end)
+			notify("Commands", "Jump set " .. tostring(n))
+		end,
+	})
+	add({
+		name = "hipheight",
+		aliases = { "hh" },
+		category = "Character",
+		desc = "Set HipHeight. hipheight [number]",
+		run = function(args)
+			local h = hum()
+			if h then h.HipHeight = tonumber(args[1]) or 0 end
+		end,
+	})
+	add({
+		name = "sit",
+		aliases = {},
+		category = "Character",
+		desc = "Sit",
+		run = function()
+			local h = hum()
+			if h then h.Sit = true end
+		end,
+	})
+	add({
+		name = "unsit",
+		aliases = {},
+		category = "Character",
+		desc = "Unsit",
+		run = function()
+			local h = hum()
+			if h then h.Sit = false end
+		end,
+	})
+	add({
+		name = "reset",
+		aliases = { "re", "kill" },
+		category = "Character",
+		desc = "Reset character",
+		run = function()
+			local h = hum()
+			if h then h.Health = 0 end
+		end,
+	})
+	add({
+		name = "refresh",
+		aliases = { "rejoinchar" },
+		category = "Character",
+		desc = "Respawn via LoadCharacter if available",
+		run = function()
+			pcall(function() LocalPlayer:LoadCharacter() end)
+		end,
+	})
+
+	------------------------------------------------------------
+	-- Movement
+	------------------------------------------------------------
+	add({
+		name = "noclip",
+		aliases = { "nc" },
+		category = "Movement",
+		desc = "Noclip on",
+		run = function()
+			if state.noclip then state.noclip:Disconnect() end
+			state.noclip = RunService.Stepped:Connect(function()
+				local c = LocalPlayer.Character
+				if not c then return end
+				for _, p in ipairs(c:GetDescendants()) do
+					if p:IsA("BasePart") then p.CanCollide = false end
+				end
+			end)
+			notify("Commands", "Noclip ON")
+		end,
+	})
+	add({
+		name = "clip",
+		aliases = { "unnoclip" },
+		category = "Movement",
+		desc = "Noclip off",
+		run = function()
+			if state.noclip then state.noclip:Disconnect() state.noclip = nil end
+			notify("Commands", "Noclip OFF")
+		end,
+	})
+	add({
+		name = "fly",
+		aliases = { "flight" },
+		category = "Movement",
+		desc = "Fly. fly [speed]",
+		run = function(args)
+			local r = hrp()
+			local h = hum()
+			if not r or not h then return end
+			if state.fly then state.fly:Disconnect() end
+			if state.flyBV then state.flyBV:Destroy() end
+			if state.flyBG then state.flyBG:Destroy() end
+			local speed = tonumber(args[1]) or 50
+			local bv = Instance.new("BodyVelocity")
+			bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+			bv.Velocity = Vector3.zero
+			bv.Parent = r
+			local bg = Instance.new("BodyGyro")
+			bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+			bg.P = 9e4
+			bg.Parent = r
+			h.PlatformStand = true
+			state.flyBV, state.flyBG = bv, bg
+			state.fly = RunService.RenderStepped:Connect(function()
+				if not r.Parent then return end
+				local cam = workspace.CurrentCamera
+				local dir = Vector3.zero
+				if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
+				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0, 1, 0) end
+				if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir = dir - Vector3.new(0, 1, 0) end
+				if dir.Magnitude > 0 then dir = dir.Unit * speed end
+				bv.Velocity = dir
+				bg.CFrame = cam.CFrame
+			end)
+			notify("Commands", "Fly ON (" .. tostring(speed) .. ")")
+		end,
+	})
+	add({
+		name = "unfly",
+		aliases = {},
+		category = "Movement",
+		desc = "Fly off",
+		run = function()
+			if state.fly then state.fly:Disconnect() state.fly = nil end
+			if state.flyBV then state.flyBV:Destroy() state.flyBV = nil end
+			if state.flyBG then state.flyBG:Destroy() state.flyBG = nil end
+			local h = hum()
+			if h then h.PlatformStand = false end
+			notify("Commands", "Fly OFF")
+		end,
+	})
+	add({
+		name = "infjump",
+		aliases = { "infinitejump" },
+		category = "Movement",
+		desc = "Infinite jump on",
+		run = function()
+			if state.infjump then state.infjump:Disconnect() end
+			state.infjump = UserInputService.JumpRequest:Connect(function()
+				local h = hum()
+				if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end
+			end)
+			notify("Commands", "InfJump ON")
+		end,
+	})
+	add({
+		name = "uninfjump",
+		aliases = {},
+		category = "Movement",
+		desc = "Infinite jump off",
+		run = function()
+			if state.infjump then state.infjump:Disconnect() state.infjump = nil end
+			notify("Commands", "InfJump OFF")
+		end,
+	})
+	add({
+		name = "spin",
+		aliases = {},
+		category = "Movement",
+		desc = "Spin. spin [speed]",
+		run = function(args)
+			local r = hrp()
+			if not r then return end
+			if state.spin then state.spin:Destroy() end
+			local spd = tonumber(args[1]) or 20
+			local ba = Instance.new("BodyAngularVelocity")
+			ba.MaxTorque = Vector3.new(0, math.huge, 0)
+			ba.AngularVelocity = Vector3.new(0, spd, 0)
+			ba.Parent = r
+			state.spin = ba
+			notify("Commands", "Spin ON")
+		end,
+	})
+	add({
+		name = "unspin",
+		aliases = {},
+		category = "Movement",
+		desc = "Stop spin",
+		run = function()
+			if state.spin then state.spin:Destroy() state.spin = nil end
+			notify("Commands", "Spin OFF")
+		end,
+	})
+
+	------------------------------------------------------------
+	-- Teleport
+	------------------------------------------------------------
+	add({
+		name = "goto",
+		aliases = { "to", "tp" },
+		category = "Teleport",
+		desc = "Teleport to player. goto [name]",
+		run = function(args)
+			local p = findPlayer(args[1] or "")
+			local thrp = p and p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+			local r = hrp()
+			if r and thrp then
+				r.CFrame = thrp.CFrame + Vector3.new(0, 0, 3)
+				notify("Commands", "Went to " .. p.Name)
+			else
+				notify("Commands", "Player not found")
+			end
+		end,
+	})
+	add({
+		name = "bring",
+		aliases = {},
+		category = "Teleport",
+		desc = "Local-only: cannot bring others server-side",
+		run = function()
+			notify("Commands", "Bring is server-sided; not available client-only.")
+		end,
+	})
+	add({
+		name = "saveloc",
+		aliases = { "setloc" },
+		category = "Teleport",
+		desc = "Save position. saveloc [name]",
+		run = function(args)
+			local r = hrp()
+			if not r then return end
+			local list = ctx.getLocations and ctx.getLocations() or {}
+			local name = args[1] or ("Loc " .. tostring(#list + 1))
+			table.insert(list, { name = name, x = r.Position.X, y = r.Position.Y, z = r.Position.Z })
+			if ctx.saveLocations then ctx.saveLocations(list) end
+			notify("Commands", "Saved " .. name)
+		end,
+	})
+	add({
+		name = "loadloc",
+		aliases = { "tploc" },
+		category = "Teleport",
+		desc = "Teleport to saved location. loadloc [name]",
+		run = function(args)
+			local list = ctx.getLocations and ctx.getLocations() or {}
+			local q = string.lower(tostring(args[1] or ""))
+			local r = hrp()
+			if not r then return end
+			for _, loc in ipairs(list) do
+				if q == "" or string.find(string.lower(tostring(loc.name)), q, 1, true) then
+					r.CFrame = CFrame.new(loc.x, loc.y, loc.z)
+					notify("Commands", "Loaded " .. tostring(loc.name))
+					return
+				end
+			end
+			notify("Commands", "Location not found")
+		end,
+	})
+	add({
+		name = "clearlocs",
+		aliases = {},
+		category = "Teleport",
+		desc = "Clear all saved locations",
+		run = function()
+			if ctx.saveLocations then ctx.saveLocations({}) end
+			notify("Commands", "Locations cleared")
+		end,
+	})
+
+	------------------------------------------------------------
+	-- Players / utility
+	------------------------------------------------------------
+	add({
+		name = "players",
+		aliases = { "plrs" },
+		category = "Utility",
+		desc = "List players",
+		run = function()
+			local names = {}
+			for _, p in ipairs(Players:GetPlayers()) do
+				table.insert(names, p.Name)
+			end
+			notify("Players", table.concat(names, ", "), 5)
+		end,
+	})
+	add({
+		name = "copyname",
+		aliases = { "cn" },
+		category = "Utility",
+		desc = "Copy player name. copyname [name]",
+		run = function(args)
+			local p = findPlayer(args[1] or LocalPlayer.Name)
+			if p and typeof(setclipboard) == "function" then
+				setclipboard(p.Name)
+				notify("Commands", "Copied " .. p.Name)
+			end
+		end,
+	})
+	add({
+		name = "copyid",
+		aliases = { "userid" },
+		category = "Utility",
+		desc = "Copy user id. copyid [name]",
+		run = function(args)
+			local p = findPlayer(args[1] or LocalPlayer.Name)
+			if p and typeof(setclipboard) == "function" then
+				setclipboard(tostring(p.UserId))
+				notify("Commands", "Copied " .. tostring(p.UserId))
+			end
+		end,
+	})
+	add({
+		name = "notif",
+		aliases = { "notify" },
+		category = "Utility",
+		desc = "Test notification",
+		run = function(args)
+			notify("Notify", table.concat(args, " ") ~= "" and table.concat(args, " ") or "Hello")
+		end,
+	})
+
+	------------------------------------------------------------
+	-- World / camera
+	------------------------------------------------------------
+	add({
+		name = "fov",
+		aliases = {},
+		category = "World",
+		desc = "Camera FOV. fov [number]",
+		run = function(args)
+			local cam = workspace.CurrentCamera
+			if cam then cam.FieldOfView = tonumber(args[1]) or 70 end
+		end,
+	})
+	add({
+		name = "fullbright",
+		aliases = { "fb" },
+		category = "World",
+		desc = "Fullbright",
+		run = function()
+			Lighting.Brightness = 2
+			Lighting.ClockTime = 14
+			Lighting.FogEnd = 100000
+			Lighting.GlobalShadows = false
+			Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+			notify("Commands", "Fullbright ON")
+		end,
+	})
+	add({
+		name = "nofog",
+		aliases = {},
+		category = "World",
+		desc = "Remove fog",
+		run = function()
+			Lighting.FogEnd = 100000
+		end,
+	})
+	add({
+		name = "time",
+		aliases = { "clocktime" },
+		category = "World",
+		desc = "Set clock time. time [0-24]",
+		run = function(args)
+			Lighting.ClockTime = tonumber(args[1]) or 14
+		end,
+	})
+
+	------------------------------------------------------------
+	-- Tools
+	------------------------------------------------------------
+	add({
+		name = "btools",
+		aliases = { "f3x" },
+		category = "Tools",
+		desc = "Give local HopperBin tools (client)",
+		run = function()
+			for _, t in ipairs({ Enum.BinType.Grab, Enum.BinType.Clone, Enum.BinType.Hammer }) do
+				local hop = Instance.new("HopperBin")
+				hop.BinType = t
+				hop.Parent = LocalPlayer.Backpack
+			end
+			notify("Commands", "Btools given (local)")
+		end,
+	})
+	add({
+		name = "cleartools",
+		aliases = {},
+		category = "Tools",
+		desc = "Clear backpack tools",
+		run = function()
+			for _, t in ipairs(LocalPlayer.Backpack:GetChildren()) do
+				if t:IsA("Tool") or t:IsA("HopperBin") then t:Destroy() end
+			end
+		end,
+	})
+
+	------------------------------------------------------------
+	-- Owner only: Dex / RSpy
+	------------------------------------------------------------
+	add({
+		name = "dex",
+		aliases = { "explorer" },
+		category = "Owner",
+		desc = "Dark Dex (owner only)",
+		ownerOnly = true,
+		run = function()
+			if not (ctx.isOwner and ctx.isOwner()) then
+				notify("Commands", "Owner only")
+				return
+			end
+			local urls = {
+				"https://raw.githubusercontent.com/infyiff/backup/main/dex.lua",
+				"https://raw.githubusercontent.com/Babyhamsta/RBLX_Scripts/main/Universal/BypassedDarkDexV3.lua",
+			}
+			for _, url in ipairs(urls) do
+				local ok, err = pcall(function()
+					loadstring(game:HttpGet(url))()
+				end)
+				if ok then
+					notify("Commands", "Dex loaded")
+					return
+				end
+			end
+			notify("Commands", "Dex failed to load")
+		end,
+	})
+	add({
+		name = "rspy",
+		aliases = { "remotespy", "remote spy" },
+		category = "Owner",
+		desc = "Remote spy (owner only)",
+		ownerOnly = true,
+		run = function()
+			if not (ctx.isOwner and ctx.isOwner()) then
+				notify("Commands", "Owner only")
+				return
+			end
+			local urls = {
+				"https://raw.githubusercontent.com/x0xtytytytytytx0x/R8Library/refs/heads/main/RSPY",
+				"https://raw.githubusercontent.com/infyiff/backup/main/SimpleSpyV3/main.lua",
+			}
+			for _, url in ipairs(urls) do
+				local ok = pcall(function()
+					loadstring(game:HttpGet(url))()
+				end)
+				if ok then
+					notify("Commands", "RSpy loaded")
+					return
+				end
+			end
+			notify("Commands", "RSpy failed to load")
+		end,
+	})
+
+	------------------------------------------------------------
+	-- Meta
+	------------------------------------------------------------
+	add({
+		name = "cmds",
+		aliases = { "commands", "help" },
+		category = "Utility",
+		desc = "Open command panel",
+		run = function()
+			if ctx.window and ctx.window.OpenToolsPanel then
+				ctx.window:OpenToolsPanel("cmd")
+			end
+		end,
+	})
+
+	return cmds
+end
